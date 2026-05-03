@@ -424,8 +424,37 @@ html, body {
 .sound-toggle:active { transform: scale(0.96); }
 .sound-toggle.is-muted { opacity: 0.55; }
 
+/* In-game exit button — sits to the LEFT of sound-toggle, only added during games */
+
+.exit-toggle {
+    position: fixed;
+    top: 14px;
+    right: 68px;       /* 44 (sound size) + 14 (margin) + 10 (gap) */
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 200ms ease,
+                color 200ms ease;
+    pointer-events: auto;
+}
+
+.exit-toggle:hover { border-color: #ff6b6b; color: #ff6b6b; transform: scale(1.06); }
+.exit-toggle:active { transform: scale(0.96); }
+
 @media (max-width: 480px) {
     .sound-toggle { top: 10px; right: 10px; width: 40px; height: 40px; font-size: 18px; }
+    .exit-toggle  { top: 10px; right: 60px; width: 40px; height: 40px; font-size: 16px; }
     .lobby__title { font-size: 44px; }
     .card { padding: 14px 16px; }
     .card__icon { width: 40px; height: 40px; font-size: 26px; }

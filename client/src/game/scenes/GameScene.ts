@@ -26,6 +26,7 @@ import { THEME } from '../../ui/theme';
 import { sfx } from '../../audio/Sfx';
 import { ComboMeter } from '../ComboMeter';
 import { BackgroundFx } from '../BackgroundFx';
+import { mountExitButton } from '../../ui/exitButton';
 
 const SEND_HZ = 30;
 const SEND_INTERVAL_MS = 1000 / SEND_HZ;
@@ -80,6 +81,7 @@ export class GameScene extends Scene {
     private combo!: ComboMeter;
     private renderFrozenUntil = 0;
     private bgfx!: BackgroundFx;
+    private unmountExit?: () => void;
 
     constructor() {
         super({ key: 'GameScene' });
@@ -182,6 +184,12 @@ export class GameScene extends Scene {
             } else if (state.phase === 'countdown' || state.phase === 'playing') {
                 this.renderedPhase = state.phase;
             }
+        });
+
+        // Mobile-friendly exit button (top-right). Forfeits the match by leaving room.
+        this.unmountExit = mountExitButton(() => {
+            void net.leave();
+            this.scene.start('LobbyScene');
         });
 
         // Cleanup
@@ -716,6 +724,7 @@ export class GameScene extends Scene {
     }
 
     private cleanup() {
-        // Defensive listener-removal via reset on next mount; Phaser auto-cleans events.
+        this.unmountExit?.();
+        this.unmountExit = undefined;
     }
 }

@@ -25,6 +25,7 @@ import { THEME } from '../../ui/theme';
 import { sfx } from '../../audio/Sfx';
 import { ComboMeter } from '../ComboMeter';
 import { BackgroundFx } from '../BackgroundFx';
+import { mountExitButton } from '../../ui/exitButton';
 
 const SOLO_ROWS = BRICK_ROWS_PER_PLAYER * 2;
 const PADDLE_Y_SOLO = ARENA_H - THUMB_ZONE - PADDLE_H / 2 - 20;
@@ -111,6 +112,7 @@ export class SoloScene extends Scene {
     private particleKey = 'spark-solo';
     private freezeUntil = 0;
     private bgfx!: BackgroundFx;
+    private unmountExit?: () => void;
 
     constructor() { super({ key: 'SoloScene' }); }
 
@@ -154,6 +156,9 @@ export class SoloScene extends Scene {
         }
 
         this.time.delayedCall(220, () => sfx.soloStart());
+
+        // Mobile-friendly exit button (top-right next to sound toggle)
+        this.unmountExit = mountExitButton(() => this.exit());
 
         this.events.once('shutdown', () => this.cleanup());
         this.events.once('destroy', () => this.cleanup());
@@ -762,5 +767,7 @@ export class SoloScene extends Scene {
 
     private cleanup() {
         document.querySelectorAll('.end-actions').forEach((el) => el.remove());
+        this.unmountExit?.();
+        this.unmountExit = undefined;
     }
 }
