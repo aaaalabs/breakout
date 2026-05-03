@@ -29,6 +29,11 @@ export class BreakoutRoom extends Room<GameState> {
     private privateRoom = false;
     private rematchVotes = new Set<string>();
     private pendingLaunch: { dir: PlayerSlot; at: number } | null = null;
+    // Garbage-system bookkeeping (server-only, not synced)
+    private brickKillsTotal = 0;
+    private prevAliveP1 = 0;
+    private prevAliveP2 = 0;
+    private static GARBAGE_THRESHOLD = 7; // every N total brick kills → 1 garbage delivery
 
     onCreate(options: JoinOptions = {}) {
         this.privateRoom = !!options.private;
@@ -120,6 +125,10 @@ export class BreakoutRoom extends Room<GameState> {
         this.state.phase = 'playing';
         this.state.matchEndsAt = Date.now() + MATCH_TIMEOUT_SECONDS * 1000;
         this.lastTickAt = Date.now();
+        // Snapshot alive counts for delta-tracking garbage triggers
+        this.prevAliveP1 = this.state.aliveCountP1;
+        this.prevAliveP2 = this.state.aliveCountP2;
+        this.brickKillsTotal = 0;
         this.startTick();
     }
 
@@ -166,6 +175,18 @@ export class BreakoutRoom extends Room<GameState> {
             this.broadcast(ev.kind, ev);
         }
 
+        // Garbage delivery: count brick deaths since last tick, deliver when threshold hit
+        const newKills = (this.prevAliveP1 - this.state.aliveCountP1) + (this.prevAliveP2 - this.state.aliveCountP2);
+        if (newKills > 0) {
+            this.brickKillsTotal += newKills;
+            this.prevAliveP1 = this.state.aliveCountP1;
+            this.prevAliveP2 = this.state.aliveCountP2;
+            while (this.brickKillsTotal >= BreakoutRoom.GARBAGE_THRESHOLD) {
+                this.brickKillsTotal -= BreakoutRoom.GARBAGE_THRESHOLD;
+                this.deliverGarbage();
+            }
+        }
+
         if (result.scoredAgainst) {
             // Position ball at center but freeze until launch — feels like a reset
             const opponent: PlayerSlot = result.scoredAgainst === 'p1' ? 'p2' : 'p1';
@@ -193,6 +214,48 @@ export class BreakoutRoom extends Room<GameState> {
         this.state.phase = 'finished';
         this.state.winnerSlot = winner;
         this.stopTick();
+    }
+
+    /** Garbage: revive up to N dead bricks on the LOSING player's side (catch-up
+     * mechanic). 22% of revived bricks become specials (🎁 / 💎) — the surprise
+     * goodies that make receiving garbage a moment of hope, not pure pain. */
+    private deliverGarbage() {
+        // Pick recipient = whoever has fewer alive bricks (the loser); ties → random
+        let recipient: PlayerSlot;
+        if (this.state.aliveCountP1 < this.state.aliveCountP2) recipient = 'p1';
+        else if (this.state.aliveCountP2 < this.state.aliveCountP1) recipient = 'p2';
+        else recipient = Math.random() < 0.5 ? 'p1' : 'p2';
+
+        const bricks = recipient === 'p1' ? this.state.bricksP1 : this.state.bricksP2;
+        const paddleY = recipient === 'p1' ? PADDLE_Y.p1 : PADDLE_Y.p2;
+
+        // Find dead bricks, sort closest-to-paddle first (visceral "right in your face" feel)
+        const dead: { brick: typeof bricks[0]; dist: number }[] = [];
+        bricks.forEach((b) => {
+            if (b.alive === 0) dead.push({ brick: b, dist: Math.abs(b.y - paddleY) });
+        });
+        if (dead.length === 0) return; // nothing to revive
+
+        dead.sort((a, b) => a.dist - b.dist);
+        const reviveCount = Math.min(4, dead.length);
+
+        for (let i = 0; i < reviveCount; i++) {
+            const { brick } = dead[i];
+            brick.alive = 1;
+            brick.hp = 1;
+            brick.maxHp = 1;
+            // Surprise! 22% of revived bricks are positive specials.
+            // Bombs intentionally excluded — they'd be too punitive on garbage.
+            const roll = Math.random();
+            if (roll < 0.12) brick.kind = 'gift';
+            else if (roll < 0.22) brick.kind = 'diamond';
+            else brick.kind = 'normal';
+
+            if (recipient === 'p1') this.state.aliveCountP1++;
+            else this.state.aliveCountP2++;
+        }
+
+        this.broadcast('garbage', { slot: recipient, count: reviveCount });
     }
 
     onDispose() {

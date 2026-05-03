@@ -151,6 +151,14 @@ export class GameScene extends Scene {
             // Tiny pulse on wall hit — leave subtle for now
         });
 
+        // Garbage incoming — drumroll cue + screen-pulse on impact
+        room.onMessage<{ slot: PlayerSlot; count: number }>('garbage', (ev) => {
+            sfx.drumroll(0.4);
+            const isMe = ev.slot === this.mySlot;
+            this.bgfx.pulse(isMe ? 0xff6b6b : 0x7ce38b, 0.22);
+            this.flashGarbageBanner(isMe ? '🗑️  GARBAGE +' + ev.count : '⚔️  YOU GARBAGED THEM');
+        });
+
         // Schema callbacks — Colyseus 0.16 pattern via getStateCallbacks(room).
         // This proxy mirrors the schema tree and exposes onChange/onAdd/onRemove.
         const $ = getStateCallbacks(room);
@@ -571,10 +579,47 @@ export class GameScene extends Scene {
                 onComplete: () => sprite.setX(ox),
             });
         } else if (alive === 1 && !sprite && stateBrick) {
-            // Resurrection (rematch)
-            const color = this.brickColor(slot, stateBrick.maxHp, stateBrick.hp);
-            arr[idx] = this.makeBrick(stateBrick.x, stateBrick.y, color, true);
+            // Resurrection — either rematch (instant) or garbage (animated drop-in)
+            const color = this.brickColor(slot, stateBrick.maxHp, stateBrick.hp, stateBrick.kind);
+            const newSprite = this.makeBrick(stateBrick.x, stateBrick.y, color, true);
+            arr[idx] = newSprite;
+            iconArr[idx] = this.makeBrickIcon(stateBrick.x, stateBrick.y, stateBrick.kind, true);
+            // Garbage drop-in: brick falls from above with a small bounce
+            if (newSprite) {
+                const targetY = stateBrick.y;
+                newSprite.y = targetY - 60;
+                newSprite.setScale(0);
+                this.tweens.add({
+                    targets: newSprite,
+                    y: targetY,
+                    scale: 1,
+                    duration: 360,
+                    ease: 'Back.easeOut',
+                });
+                if (iconArr[idx]) {
+                    const ic = iconArr[idx]!;
+                    ic.y = targetY - 60;
+                    ic.setAlpha(0);
+                    this.tweens.add({ targets: ic, y: targetY, alpha: 1, duration: 360, ease: 'Back.easeOut' });
+                }
+            }
         }
+    }
+
+    private flashGarbageBanner(text: string) {
+        const t = this.add.text(ARENA_W / 2, ARENA_H / 2, text, {
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontSize: '24px', fontStyle: '800',
+            color: '#ffd166',
+        }).setOrigin(0.5).setAlpha(0).setScale(0.7);
+        t.setLetterSpacing(3);
+        this.hudLayer.add(t);
+        this.tweens.add({ targets: t, alpha: 1, scale: 1, duration: 200, ease: 'Back.easeOut' });
+        this.tweens.add({
+            targets: t, alpha: 0, y: t.y - 20,
+            duration: 600, delay: 700, ease: 'Cubic.easeIn',
+            onComplete: () => t.destroy(),
+        });
     }
 
     private handleBrickBreak(ev: BrickBreakEvent) {
