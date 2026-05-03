@@ -152,11 +152,11 @@ export class BreakoutRoom extends Room<GameState> {
         }
 
         if (result.scoredAgainst) {
-            // Ball passed paddle — respawn toward whoever scored
-            const scorer: PlayerSlot = result.scoredAgainst === 'p1' ? 'p2' : 'p1';
-            resetBall(this.state, result.scoredAgainst);
-            // Note: no point counter — game is decided by brick count
-            void scorer;
+            // Ball passed loser's paddle. Respawn at center, send toward the OTHER
+            // side (away from where it just exited) so it doesn't immediately fly
+            // back out the same wall. Speed reset to BALL_INITIAL_SPEED in resetBall().
+            const opponent: PlayerSlot = result.scoredAgainst === 'p1' ? 'p2' : 'p1';
+            resetBall(this.state, opponent);
         }
 
         // Win check: opponent's bricks at zero
