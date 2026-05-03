@@ -24,6 +24,7 @@ import {
 import { THEME } from '../../ui/theme';
 import { sfx } from '../../audio/Sfx';
 import { ComboMeter } from '../ComboMeter';
+import { BackgroundFx } from '../BackgroundFx';
 
 const SOLO_ROWS = BRICK_ROWS_PER_PLAYER * 2;
 const PADDLE_Y_SOLO = ARENA_H - THUMB_ZONE - PADDLE_H / 2 - 20;
@@ -109,6 +110,7 @@ export class SoloScene extends Scene {
     private kbPaddleX: number | null = null;
     private particleKey = 'spark-solo';
     private freezeUntil = 0;
+    private bgfx!: BackgroundFx;
 
     constructor() { super({ key: 'SoloScene' }); }
 
@@ -120,6 +122,7 @@ export class SoloScene extends Scene {
         this.hudLayer = this.add.container(0, 0);
 
         this.buildBackground();
+        this.bgfx = new BackgroundFx(this, this.bgLayer);
         this.buildHud();
         this.buildParticleTexture();
         this.buildBricks();
@@ -159,6 +162,7 @@ export class SoloScene extends Scene {
     update(time: number, deltaMs: number) {
         const dt = Math.min(0.05, deltaMs / 1000);
         this.combo?.tick(time);
+        this.bgfx?.tick(time);
         this.updateActiveEffects(time);
         const frozen = time < this.freezeUntil;
 
@@ -316,8 +320,15 @@ export class SoloScene extends Scene {
         sfx.brickBreak();
         sfx.maybeCombo();
         if (this.balls[0]) this.squashBall(this.balls[0], 'y', 0.5);
-        if (this.aliveCount === 0) this.freezeUntil = this.time.now + 140;
-        else if (result.tier >= 4) this.freezeUntil = this.time.now + 50;
+        if (this.aliveCount === 0) {
+            this.freezeUntil = this.time.now + 140;
+            this.bgfx.pulse(COLORS.p1, 0.30);
+        } else if (result.tier >= 4) {
+            this.freezeUntil = this.time.now + 50;
+            // Tier color matches combo meter
+            const tierColor = result.tier >= 6 ? COLORS.p2 : result.tier >= 5 ? 0xffd166 : 0x7ce38b;
+            this.bgfx.pulse(tierColor, 0.16);
+        }
 
         // Visual destroy
         const x = brick.x, y = brick.y, color = brick.color;
@@ -430,6 +441,7 @@ export class SoloScene extends Scene {
     private applyPowerUp(type: PowerUpType) {
         sfx.playSample('combo', { volume: 0.5 });
         this.flashPickupBanner(POWERUP_VISUAL[type].emoji + '  ' + POWERUP_VISUAL[type].label);
+        this.bgfx.pulse(POWERUP_VISUAL[type].color, 0.22);
         if (type === 'multi-ball') {
             this.spawnExtraBalls();
         } else if (type === 'long-paddle') {

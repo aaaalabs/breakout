@@ -189,13 +189,12 @@ function handleBrickCollisions(
 }
 
 export function resetBall(state: GameState, towardSlot: PlayerSlot): void {
+    // Always respawn at INITIAL speed — the previous round's velocity should not
+    // carry over. Speed tier is preserved so subsequent brick hits continue ramping
+    // from where they left off (just from a calm reset, not a flying-cannon reset).
     state.ball.x = ARENA_W / 2;
     state.ball.y = ARENA_H / 2;
-    const speed = Math.min(
-        BALL_MAX_SPEED,
-        BALL_INITIAL_SPEED * Math.pow(BALL_SPEED_INCREMENT_PER_HIT, state.ballSpeedTier)
-    );
     const angle = (Math.random() - 0.5) * 0.6; // ±0.3 rad
-    state.ball.vx = Math.sin(angle) * speed;
-    state.ball.vy = Math.cos(angle) * speed * (towardSlot === 'p1' ? -1 : 1);
+    state.ball.vx = Math.sin(angle) * BALL_INITIAL_SPEED;
+    state.ball.vy = Math.cos(angle) * BALL_INITIAL_SPEED * (towardSlot === 'p1' ? -1 : 1);
 }

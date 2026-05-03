@@ -67,23 +67,29 @@ html, body {
 /* Lobby --------------------------------------------------------------- */
 
 .lobby {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    /* Use grid place-items for guaranteed viewport-centered layout
+       independent of any flex / canvas-centering quirks above. */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    display: grid;
+    place-items: center;
     padding: 32px;
-    gap: 36px;
     opacity: 0;
-    transform: translateY(8px);
-    transition: opacity 480ms cubic-bezier(0.22, 1, 0.36, 1),
-                transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: opacity 480ms cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
 }
+
+.lobby > * { pointer-events: auto; }
+
+/* Stack the title, sub, cards inside the centered grid cell */
+.lobby > * + * { margin-top: 36px; }
 
 .lobby.is-visible {
     opacity: 1;
-    transform: translateY(0);
 }
 
 .lobby__title {
@@ -354,22 +360,23 @@ html, body {
 /* End scene buttons --------------------------------------------------- */
 
 .end-actions {
-    position: absolute;
-    left: 0;
-    right: 0;
+    /* Fixed-viewport centered, independent of any parent layout quirks. */
+    position: fixed;
+    left: 50%;
     bottom: 12vh;
+    transform: translateX(-50%) translateY(8px);
     display: flex;
     justify-content: center;
     gap: 12px;
     opacity: 0;
-    transform: translateY(8px);
     transition: opacity 600ms cubic-bezier(0.22, 1, 0.36, 1) 600ms,
                 transform 600ms cubic-bezier(0.22, 1, 0.36, 1) 600ms;
+    z-index: 5;
 }
 
 .end-actions.is-visible {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(-50%) translateY(0);
 }
 
 .end-btn {

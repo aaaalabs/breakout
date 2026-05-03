@@ -25,6 +25,7 @@ import { net } from '../../network/Net';
 import { THEME } from '../../ui/theme';
 import { sfx } from '../../audio/Sfx';
 import { ComboMeter } from '../ComboMeter';
+import { BackgroundFx } from '../BackgroundFx';
 
 const SEND_HZ = 30;
 const SEND_INTERVAL_MS = 1000 / SEND_HZ;
@@ -78,6 +79,7 @@ export class GameScene extends Scene {
     private renderPaddleP2X = 0;
     private combo!: ComboMeter;
     private renderFrozenUntil = 0;
+    private bgfx!: BackgroundFx;
 
     constructor() {
         super({ key: 'GameScene' });
@@ -101,6 +103,7 @@ export class GameScene extends Scene {
         this.hudLayer = this.add.container(0, 0);
 
         this.buildBackground();
+        this.bgfx = new BackgroundFx(this, this.bgLayer);
         this.buildHud();
         this.buildPaddlesAndBall();
         this.buildParticleTexture();
@@ -193,6 +196,7 @@ export class GameScene extends Scene {
         if (!room) return;
         const state = room.state;
         this.combo?.tick(time);
+        this.bgfx?.tick(time);
 
         // Frame-rate-independent smoothing factor (~30Hz half-life).
         // During hit-stop the lerp factor is zero so the ball appears frozen.
@@ -522,11 +526,13 @@ export class GameScene extends Scene {
         sfx.brickBreak();
         sfx.maybeCombo();
         this.squashBall('y', 0.5);
-        // Only count MY bricks toward MY combo
         if (ev.slot === this.mySlot) {
             const result = this.combo.register(this.time.now);
-            // Hit-stop on big combos (visible only — server doesn't pause)
-            if (result.tier >= 4) this.freezeRender(50);
+            if (result.tier >= 4) {
+                this.freezeRender(50);
+                const tierColor = result.tier >= 6 ? COLORS.p2 : result.tier >= 5 ? 0xffd166 : 0x7ce38b;
+                this.bgfx.pulse(tierColor, 0.14);
+            }
         }
     }
 
