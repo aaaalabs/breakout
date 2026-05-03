@@ -48,7 +48,7 @@ interface BallEntity {
     glow: Phaser.GameObjects.Arc;
 }
 
-type PowerUpType = 'multi-ball';
+type PowerUpType = 'multi-ball' | 'long-paddle' | 'slow-mo';
 
 interface PowerUp {
     type: PowerUpType;
@@ -57,8 +57,27 @@ interface PowerUp {
 }
 
 const POWERUP_VISUAL: Record<PowerUpType, { emoji: string; color: number; label: string }> = {
-    'multi-ball': { emoji: '⚡', color: 0xffd166, label: 'MULTI-BALL' },
+    'multi-ball':  { emoji: '⚡', color: 0xffd166, label: 'MULTI-BALL'  },
+    'long-paddle': { emoji: '📏', color: 0x00f0f0, label: 'LONG PADDLE' },
+    'slow-mo':     { emoji: '🕒', color: 0x9d8df1, label: 'SLOW MOTION' },
 };
+
+// Weighted drop pool — each type's slice of the pie
+const POWERUP_POOL: PowerUpType[] = [
+    'multi-ball', 'multi-ball', 'multi-ball',           // 30%
+    'long-paddle', 'long-paddle', 'long-paddle', 'long-paddle', // 40%
+    'slow-mo', 'slow-mo', 'slow-mo',                    // 30%
+];
+
+const LONG_PADDLE_DURATION_MS = 15_000;
+const LONG_PADDLE_WIDTH_MULT = 1.6;
+const SLOW_MO_DURATION_MS = 5_000;
+const SLOW_MO_FACTOR = 0.5;
+
+interface ActiveEffect {
+    type: PowerUpType;
+    expiresAt: number;
+}
 
 export class SoloScene extends Scene {
     private bgLayer!: Phaser.GameObjects.Container;
@@ -76,6 +95,8 @@ export class SoloScene extends Scene {
 
     private balls: BallEntity[] = [];
     private powerUps: PowerUp[] = [];
+    private activeEffects: ActiveEffect[] = [];
+    private effectIcons = new Map<PowerUpType, { container: Phaser.GameObjects.Container; bar: Phaser.GameObjects.Rectangle; }>();
 
     private hudScore!: Phaser.GameObjects.Text;
     private hudLives!: Phaser.GameObjects.Text;
@@ -138,16 +159,18 @@ export class SoloScene extends Scene {
     update(time: number, deltaMs: number) {
         const dt = Math.min(0.05, deltaMs / 1000);
         this.combo?.tick(time);
+        this.updateActiveEffects(time);
         const frozen = time < this.freezeUntil;
 
-        // Keyboard movement
+        // Keyboard movement (clamp respects current paddle width with long-paddle)
         const left = this.cursors?.left.isDown || this.keyA?.isDown;
         const right = this.cursors?.right.isDown || this.keyD?.isDown;
         if (left || right) {
             const speed = 980;
+            const halfW = (PADDLE_W * this.paddle.scaleX) / 2;
             const cur = this.kbPaddleX ?? this.paddle.x;
             const dir = (right ? 1 : 0) - (left ? 1 : 0);
-            const next = Math.max(PADDLE_W / 2, Math.min(ARENA_W - PADDLE_W / 2, cur + dir * speed * dt));
+            const next = Math.max(halfW, Math.min(ARENA_W - halfW, cur + dir * speed * dt));
             this.kbPaddleX = next;
             this.paddle.x = next;
         }
@@ -223,8 +246,8 @@ export class SoloScene extends Scene {
         // Below paddle = ball dropped (handled by main update loop)
         if (b.y - BALL_RADIUS > ARENA_H) return;
 
-        // Paddle collision
-        const halfW = PADDLE_W / 2;
+        // Paddle collision (paddle width adjusts via scaleX during long-paddle effect)
+        const halfW = (PADDLE_W * this.paddle.scaleX) / 2;
         const halfH = PADDLE_H / 2;
         const dx = b.x - this.paddle.x;
         const dy = b.y - PADDLE_Y_SOLO;
@@ -335,9 +358,12 @@ export class SoloScene extends Scene {
             }
         }
 
-        // Power-up drop
+        // Power-up drop — pick weighted random type from pool
         const dropChance = brick.maxHp >= 2 ? IRON_POWERUP_DROP_CHANCE : POWERUP_DROP_CHANCE;
-        if (Math.random() < dropChance) this.spawnPowerUp(x, y, 'multi-ball');
+        if (Math.random() < dropChance) {
+            const type = POWERUP_POOL[Math.floor(Math.random() * POWERUP_POOL.length)];
+            this.spawnPowerUp(x, y, type);
+        }
 
         if (this.aliveCount === 0) this.win();
     }
@@ -404,7 +430,116 @@ export class SoloScene extends Scene {
     private applyPowerUp(type: PowerUpType) {
         sfx.playSample('combo', { volume: 0.5 });
         this.flashPickupBanner(POWERUP_VISUAL[type].emoji + '  ' + POWERUP_VISUAL[type].label);
-        if (type === 'multi-ball') this.spawnExtraBalls();
+        if (type === 'multi-ball') {
+            this.spawnExtraBalls();
+        } else if (type === 'long-paddle') {
+            this.refreshEffect('long-paddle', LONG_PADDLE_DURATION_MS);
+            this.applyLongPaddle();
+        } else if (type === 'slow-mo') {
+            this.refreshEffect('slow-mo', SLOW_MO_DURATION_MS);
+            this.applySlowMo();
+        }
+    }
+
+    /** Add or refresh a timed effect. Renders an indicator. */
+    private refreshEffect(type: PowerUpType, durationMs: number) {
+        const expiresAt = this.time.now + durationMs;
+        const existing = this.activeEffects.find((e) => e.type === type);
+        if (existing) {
+            existing.expiresAt = expiresAt;
+        } else {
+            this.activeEffects.push({ type, expiresAt });
+            this.spawnEffectIcon(type, durationMs);
+        }
+    }
+
+    private applyLongPaddle() {
+        const targetWidth = PADDLE_W * LONG_PADDLE_WIDTH_MULT;
+        this.tweens.add({
+            targets: this.paddle,
+            scaleX: targetWidth / PADDLE_W,
+            duration: 220,
+            ease: 'Back.easeOut',
+        });
+    }
+
+    private removeLongPaddle() {
+        this.tweens.add({
+            targets: this.paddle,
+            scaleX: 1,
+            duration: 320,
+            ease: 'Cubic.easeInOut',
+        });
+    }
+
+    private applySlowMo() {
+        // Multiply all current ball velocities. New balls (e.g. multi-ball spawn
+        // during slow-mo) inherit the slowed speed naturally because the speed
+        // ramp uses absolute targets — no additional scaling needed.
+        for (const b of this.balls) { b.vx *= SLOW_MO_FACTOR; b.vy *= SLOW_MO_FACTOR; }
+    }
+
+    private removeSlowMo() {
+        const inv = 1 / SLOW_MO_FACTOR;
+        for (const b of this.balls) { b.vx *= inv; b.vy *= inv; }
+    }
+
+    private updateActiveEffects(now: number) {
+        for (let i = this.activeEffects.length - 1; i >= 0; i--) {
+            const eff = this.activeEffects[i];
+            const remaining = eff.expiresAt - now;
+            const slot = this.effectIcons.get(eff.type);
+            if (slot) {
+                // Update countdown bar (right→left fill)
+                const total = eff.type === 'long-paddle' ? LONG_PADDLE_DURATION_MS : SLOW_MO_DURATION_MS;
+                const ratio = Math.max(0, remaining / total);
+                slot.bar.setScale(ratio, 1);
+            }
+            if (remaining <= 0) {
+                if (eff.type === 'long-paddle') this.removeLongPaddle();
+                else if (eff.type === 'slow-mo') this.removeSlowMo();
+                this.removeEffectIcon(eff.type);
+                this.activeEffects.splice(i, 1);
+            }
+        }
+    }
+
+    private spawnEffectIcon(type: PowerUpType, _durationMs: number) {
+        const visual = POWERUP_VISUAL[type];
+        const yBase = ARENA_H - THUMB_ZONE - 28;
+        const slotIdx = this.effectIcons.size;
+        const x = ARENA_W / 2 - 80 + slotIdx * 80;
+
+        const container = this.add.container(x, yBase);
+        const bg = this.add.rectangle(0, 0, 64, 28, 0x13131f, 0.85).setStrokeStyle(1, visual.color, 0.6);
+        const icon = this.add.text(-18, 1, visual.emoji, {
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontSize: '14px',
+        }).setOrigin(0.5);
+        const bar = this.add.rectangle(-30, 11, 60, 2, visual.color, 0.85).setOrigin(0, 0.5);
+        const label = this.add.text(8, 1, type === 'long-paddle' ? 'LONG' : 'SLOW', {
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontSize: '9px', color: `#${visual.color.toString(16).padStart(6, '0')}`,
+            fontStyle: '700',
+        }).setOrigin(0.5);
+        label.setLetterSpacing(1.5);
+        container.add([bg, icon, label, bar]);
+        container.setAlpha(0).setScale(0.85);
+        this.hudLayer.add(container);
+        this.tweens.add({ targets: container, alpha: 1, scale: 1, duration: 240, ease: 'Back.easeOut' });
+        this.effectIcons.set(type, { container, bar });
+    }
+
+    private removeEffectIcon(type: PowerUpType) {
+        const slot = this.effectIcons.get(type);
+        if (!slot) return;
+        this.tweens.add({
+            targets: slot.container,
+            alpha: 0, scale: 0.85,
+            duration: 200, ease: 'Cubic.easeIn',
+            onComplete: () => slot.container.destroy(),
+        });
+        this.effectIcons.delete(type);
     }
 
     private spawnExtraBalls() {
@@ -607,7 +742,8 @@ export class SoloScene extends Scene {
     }
 
     private handlePointer(pointer: Phaser.Input.Pointer) {
-        const x = Math.max(PADDLE_W / 2, Math.min(ARENA_W - PADDLE_W / 2, pointer.worldX));
+        const halfW = (PADDLE_W * this.paddle.scaleX) / 2;
+        const x = Math.max(halfW, Math.min(ARENA_W - halfW, pointer.worldX));
         this.paddle.x = x;
         this.kbPaddleX = x;
     }
