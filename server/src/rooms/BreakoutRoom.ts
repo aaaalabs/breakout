@@ -2,6 +2,7 @@ import { Room, Client } from 'colyseus';
 import {
     GameState,
     ARENA_W,
+    ARENA_H,
     PADDLE_W,
     PADDLE_H,
     PADDLE_Y,
