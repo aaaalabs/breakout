@@ -395,6 +395,60 @@ html, body {
 .end-btn--primary { border-color: rgba(0, 240, 240, 0.45); }
 .end-btn--primary:hover { border-color: var(--p1); }
 
+/* In-game emoji banners — HTML overlay (Canvas text can't render emojis reliably) */
+
+.emoji-banner {
+    position: fixed;
+    left: 50%;
+    top: 30%;
+    transform: translate(-50%, -50%) scale(0.7);
+    font-family: -apple-system, "SF Pro Display", "Segoe UI", "Apple Color Emoji",
+                 "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    color: #ffd166;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 200ms cubic-bezier(0.34, 1.56, 0.64, 1),
+                transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 8;
+    text-shadow: 0 2px 16px rgba(0, 0, 0, 0.55);
+}
+
+.emoji-banner.is-visible {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.emoji-banner.is-leaving {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% - 24px)) scale(1);
+}
+
+.emoji-banner--garbage { color: #00f0f0; }
+.emoji-banner--bomb { color: #ff6b6b; }
+.emoji-banner--diamond { color: #9d8df1; }
+.emoji-banner--gift { color: #ffd166; }
+.emoji-banner--win { color: #00f0f0; font-size: 44px; }
+.emoji-banner--lose { color: #ff5fb8; font-size: 44px; }
+
+.solo-hint {
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    transform: translateX(-50%);
+    font-family: -apple-system, "SF Pro Display", "Segoe UI", "Apple Color Emoji",
+                 "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    pointer-events: none;
+    z-index: 5;
+    white-space: nowrap;
+}
+
 /* Sound mute toggle (always visible top-right) ------------------------ */
 
 .sound-toggle {

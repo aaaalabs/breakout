@@ -26,6 +26,7 @@ import { sfx } from '../../audio/Sfx';
 import { ComboMeter } from '../ComboMeter';
 import { BackgroundFx } from '../BackgroundFx';
 import { mountExitButton } from '../../ui/exitButton';
+import { flashBanner, mountHint } from '../../ui/banner';
 
 const SOLO_ROWS = BRICK_ROWS_PER_PLAYER * 2;
 const PADDLE_Y_SOLO = ARENA_H - THUMB_ZONE - PADDLE_H / 2 - 20;
@@ -125,6 +126,7 @@ export class SoloScene extends Scene {
     private freezeUntil = 0;
     private bgfx!: BackgroundFx;
     private unmountExit?: () => void;
+    private unmountHint?: () => void;
 
     constructor() { super({ key: 'SoloScene' }); }
 
@@ -334,13 +336,13 @@ export class SoloScene extends Scene {
             const type = POWERUP_POOL[Math.floor(Math.random() * POWERUP_POOL.length)];
             this.spawnPowerUp(brick.x, brick.y, type);
             sfx.gift();
-            this.flashPickupBanner('🎁  GIFT');
+            flashBanner('🎁  GIFT', { variant: 'gift' });
             this.bgfx.pulse(0xffd166, 0.22);
         } else if (brick.kind === 'diamond') {
             this.score += 50;
             this.hudScore.setText(`${this.score}`);
             sfx.diamond();
-            this.flashPickupBanner('💎  +50');
+            flashBanner('💎  +50', { variant: 'diamond' });
             this.bgfx.pulse(0x9d8df1, 0.20);
             for (let i = 0; i < 12; i++) {
                 const angle = (Math.PI * 2 * i) / 12 + Math.random() * 0.3;
@@ -359,7 +361,7 @@ export class SoloScene extends Scene {
             }
         } else if (brick.kind === 'bomb') {
             sfx.bomb();
-            this.flashPickupBanner('💣  BOOM');
+            flashBanner('💣  BOOM', { variant: 'bomb' });
             this.cameras.main.shake(180, 0.012);
             this.bgfx.pulse(0xff6b6b, 0.32);
             const RADIUS = 90;
@@ -645,19 +647,8 @@ export class SoloScene extends Scene {
     }
 
     private flashPickupBanner(text: string) {
-        const t = this.add.text(ARENA_W / 2, ARENA_H / 2 - 100, text, {
-            fontFamily: THEME.fontFamilyEmoji,
-            fontSize: '26px', fontStyle: '800',
-            color: '#ffd166',
-        }).setOrigin(0.5).setAlpha(0).setScale(0.7);
-        t.setLetterSpacing(3);
-        this.hudLayer.add(t);
-        this.tweens.add({ targets: t, alpha: 1, scale: 1.0, duration: 200, ease: 'Back.easeOut' });
-        this.tweens.add({
-            targets: t, alpha: 0, y: t.y - 24,
-            duration: 700, delay: 700, ease: 'Cubic.easeIn',
-            onComplete: () => t.destroy(),
-        });
+        // Now uses HTML overlay via flashBanner — Canvas Text can't render emojis reliably
+        flashBanner(text);
     }
 
     // ---- Squash ------------------------------------------------------
@@ -688,7 +679,9 @@ export class SoloScene extends Scene {
         // Respawn one ball stuck on paddle
         this.spawnBall(true);
         this.cameras.main.flash(160, 30, 30, 30);
-        this.hudHint.setText('👆 tap or SPACE to launch');
+        this.hudHint.setText('');
+        this.unmountHint?.();
+        this.unmountHint = mountHint('👆 tap or SPACE to launch · ⌨️ arrows / A·D · ⛔ ESC');
     }
 
     private win() {
@@ -709,20 +702,19 @@ export class SoloScene extends Scene {
     private showResult(headline: string, subline: string) {
         const dim = this.add.rectangle(ARENA_W / 2, ARENA_H / 2, ARENA_W, ARENA_H, 0x0a0a14, 0.55);
         this.hudLayer.add(dim);
-        const head = this.add.text(ARENA_W / 2, ARENA_H / 2 - 36, headline, {
-            fontFamily: THEME.fontFamilyEmoji,
-            fontSize: '40px', fontStyle: '800', color: '#e8e8f4', align: 'center',
-        }).setOrigin(0.5).setAlpha(0).setScale(1.18);
-        head.setLetterSpacing(4);
-        this.hudLayer.add(head);
-        this.tweens.add({ targets: head, alpha: 1, scale: 1, duration: 520, ease: 'Quint.easeOut' });
-        const sub = this.add.text(ARENA_W / 2, ARENA_H / 2 + 14, subline, {
-            fontFamily: THEME.fontFamilyEmoji,
+
+        // Big headline with emoji → HTML overlay (Canvas Text can't render emojis)
+        const variant: 'win' | 'lose' = headline.includes('🏆') ? 'win' : 'lose';
+        flashBanner(headline, { variant, holdMs: 6000 });
+
+        // Subline (no emoji) renders fine in Phaser
+        const sub = this.add.text(ARENA_W / 2, ARENA_H / 2 + 30, subline, {
+            fontFamily: THEME.fontFamily,
             fontSize: '14px', color: '#9292b0', align: 'center',
         }).setOrigin(0.5).setAlpha(0);
         sub.setLetterSpacing(2);
         this.hudLayer.add(sub);
-        this.tweens.add({ targets: sub, alpha: 1, duration: 480, delay: 180, ease: 'Cubic.easeOut' });
+        this.tweens.add({ targets: sub, alpha: 1, duration: 480, delay: 480, ease: 'Cubic.easeOut' });
 
         const overlay = document.getElementById('ui-overlay')!;
         const actions = document.createElement('div');
@@ -768,25 +760,26 @@ export class SoloScene extends Scene {
     }
 
     private buildHud() {
+        // Score + Lives stay as Phaser Text (no emojis in score / dot characters)
         this.hudScore = this.add.text(24, 24, '0', {
-            fontFamily: THEME.fontFamilyEmoji,
+            fontFamily: THEME.fontFamily,
             fontSize: '24px', color: '#e8e8f4', fontStyle: '800',
         }).setOrigin(0, 0);
         this.hudScore.setLetterSpacing(2);
         this.hudLayer.add(this.hudScore);
 
         this.hudLives = this.add.text(ARENA_W - 24, 24, '●●●', {
-            fontFamily: THEME.fontFamilyEmoji,
+            fontFamily: THEME.fontFamily,
             fontSize: '20px', color: `#${COLORS.p1.toString(16)}`,
         }).setOrigin(1, 0);
         this.hudLives.setLetterSpacing(4);
         this.hudLayer.add(this.hudLives);
 
-        this.hudHint = this.add.text(ARENA_W / 2, ARENA_H - 28, 'Tap, drag, or arrow keys · SPACE to launch · ESC for lobby', {
-            fontFamily: THEME.fontFamilyEmoji,
+        // Hint with emoji → HTML overlay (Canvas can't render 👆/⌨️/⛔)
+        this.hudHint = this.add.text(ARENA_W / 2, ARENA_H - 28, '', {
+            fontFamily: THEME.fontFamily,
             fontSize: '11px', color: '#6c6c8a',
         }).setOrigin(0.5);
-        this.hudHint.setLetterSpacing(2);
         this.hudLayer.add(this.hudHint);
     }
 
@@ -878,7 +871,9 @@ export class SoloScene extends Scene {
         this.paddle = this.add.rectangle(ARENA_W / 2, PADDLE_Y_SOLO, PADDLE_W, PADDLE_H, COLORS.p1, 0.96);
         this.paddle.setStrokeStyle(1, COLORS.p1, 0.4);
         this.playLayer.add(this.paddle);
-        this.hudHint.setText('👆 tap or SPACE to launch');
+        this.hudHint.setText('');
+        this.unmountHint?.();
+        this.unmountHint = mountHint('👆 tap or SPACE to launch · ⌨️ arrows / A·D · ⛔ ESC');
     }
 
     private handlePointer(pointer: Phaser.Input.Pointer) {
@@ -890,7 +885,11 @@ export class SoloScene extends Scene {
 
     private cleanup() {
         document.querySelectorAll('.end-actions').forEach((el) => el.remove());
+        document.querySelectorAll('.solo-hint').forEach((el) => el.remove());
+        document.querySelectorAll('.emoji-banner').forEach((el) => el.remove());
         this.unmountExit?.();
         this.unmountExit = undefined;
+        this.unmountHint?.();
+        this.unmountHint = undefined;
     }
 }

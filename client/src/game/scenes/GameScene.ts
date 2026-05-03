@@ -27,6 +27,7 @@ import { sfx } from '../../audio/Sfx';
 import { ComboMeter } from '../ComboMeter';
 import { BackgroundFx } from '../BackgroundFx';
 import { mountExitButton } from '../../ui/exitButton';
+import { flashBanner } from '../../ui/banner';
 
 // 60Hz paddle sends — halves the worst-case "ball passed through paddle" window
 // from ~33ms to ~17ms when a player flicks at the last moment.
@@ -608,19 +609,8 @@ export class GameScene extends Scene {
     }
 
     private flashGarbageBanner(text: string) {
-        const t = this.add.text(ARENA_W / 2, ARENA_H / 2, text, {
-            fontFamily: THEME.fontFamilyEmoji,
-            fontSize: '24px', fontStyle: '800',
-            color: '#ffd166',
-        }).setOrigin(0.5).setAlpha(0).setScale(0.7);
-        t.setLetterSpacing(3);
-        this.hudLayer.add(t);
-        this.tweens.add({ targets: t, alpha: 1, scale: 1, duration: 200, ease: 'Back.easeOut' });
-        this.tweens.add({
-            targets: t, alpha: 0, y: t.y - 20,
-            duration: 600, delay: 700, ease: 'Cubic.easeIn',
-            onComplete: () => t.destroy(),
-        });
+        // HTML overlay so 🗑️ ⚔️ render correctly
+        flashBanner(text, { variant: 'garbage' });
     }
 
     private handleBrickBreak(ev: BrickBreakEvent) {
