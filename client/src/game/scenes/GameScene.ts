@@ -548,23 +548,29 @@ export class GameScene extends Scene {
             const newSprite = this.makeBrick(stateBrick.x, stateBrick.y, stateBrick.kind, slot, true);
             arr[idx] = newSprite;
             if (newSprite) {
-                // Capture the target scale set by makeBrick (setDisplaySize gives
-                // a scale ≈ 0.22 for atlas Image; 1.0 for fallback Rectangle).
-                // Tween FROM 0 TO this captured value so the brick doesn't grow
-                // to its source image size.
-                const targetScaleX = newSprite.scaleX;
-                const targetScaleY = newSprite.scaleY;
+                // Drop-in animation using alpha + y (safer than scale tweens which
+                // conflict with the setDisplaySize-derived scaleX/Y of atlas images).
                 const targetY = stateBrick.y;
-                newSprite.y = targetY - 60;
-                newSprite.setScale(0);
+                newSprite.y = targetY - 80;
+                newSprite.setAlpha(0);
                 this.tweens.add({
                     targets: newSprite,
                     y: targetY,
-                    scaleX: targetScaleX,
-                    scaleY: targetScaleY,
-                    duration: 360,
+                    alpha: 1,
+                    duration: 380,
                     ease: 'Back.easeOut',
                 });
+                // Brief gold-tint flash to celebrate surprise specials in garbage
+                if (stateBrick.kind === 'gift' || stateBrick.kind === 'diamond') {
+                    newSprite.setTint(0xffe9a8);
+                    this.tweens.add({
+                        targets: newSprite,
+                        delay: 380,
+                        duration: 280,
+                        onUpdate: () => { /* tint clear handled in onComplete */ },
+                        onComplete: () => newSprite.clearTint(),
+                    });
+                }
             }
         }
     }
