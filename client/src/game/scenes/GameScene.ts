@@ -70,6 +70,11 @@ export class GameScene extends Scene {
     private keyD?: Phaser.Input.Keyboard.Key;
     private kbPaddleX: number | null = null;
     private renderedPhase: string | null = null;
+    // Smooth interpolation: render-state lerps toward latest server snapshot.
+    private renderBallX = 0;
+    private renderBallY = 0;
+    private renderPaddleP1X = 0;
+    private renderPaddleP2X = 0;
 
     constructor() {
         super({ key: 'GameScene' });
@@ -182,26 +187,48 @@ export class GameScene extends Scene {
         if (!room) return;
         const state = room.state;
 
-        // Render paddles (interpolation = direct copy; Colyseus already smooths
-        // server-side broadcast at 20 Hz; we render at 60).
+        // Frame-rate-independent smoothing factor (~30Hz half-life).
+        // Higher = snappier (less lag) but more visual jitter at low patch rate.
+        // Lower  = smoother (more lag) but feels rubbery on input.
+        // 0.35 at 60fps ≈ catches up ~95% in 6 frames (100ms) — invisible to eye.
+        const dtMs = this.game.loop.delta;
+        const a = 1 - Math.exp(-dtMs / 33);
+
+        // Paddles — own paddle uses local prediction (already in sprite),
+        // opponent paddle interpolates from server.
         if (state.paddleP1) {
-            this.paddleP1.x = state.paddleP1.x;
+            const target = state.paddleP1.x;
+            if (this.mySlot === 'p1') {
+                // local prediction already set this; just snap server correction softly
+                this.renderPaddleP1X += (target - this.renderPaddleP1X) * a * 0.5;
+                this.paddleP1.x = this.paddleP1.x; // keep local prediction
+            } else {
+                this.renderPaddleP1X += (target - this.renderPaddleP1X) * a;
+                this.paddleP1.x = this.renderPaddleP1X;
+            }
             this.paddleP1.width = state.paddleP1.width || this.paddleP1.width;
         }
         if (state.paddleP2) {
-            this.paddleP2.x = state.paddleP2.x;
+            const target = state.paddleP2.x;
+            if (this.mySlot === 'p2') {
+                this.renderPaddleP2X += (target - this.renderPaddleP2X) * a * 0.5;
+                this.paddleP2.x = this.paddleP2.x;
+            } else {
+                this.renderPaddleP2X += (target - this.renderPaddleP2X) * a;
+                this.paddleP2.x = this.renderPaddleP2X;
+            }
             this.paddleP2.width = state.paddleP2.width || this.paddleP2.width;
         }
 
-        // Render ball
+        // Ball — smooth lerp toward latest server position (kills 30Hz teleports)
         if (state.ball) {
-            const bx = state.ball.x;
-            const by = state.ball.y;
-            this.ball.setPosition(bx, by);
-            this.ballGlow.setPosition(bx, by);
+            this.renderBallX += (state.ball.x - this.renderBallX) * a;
+            this.renderBallY += (state.ball.y - this.renderBallY) * a;
+            this.ball.setPosition(this.renderBallX, this.renderBallY);
+            this.ballGlow.setPosition(this.renderBallX, this.renderBallY);
 
-            // Update trail
-            this.trailHistory.unshift({ x: bx, y: by });
+            // Update trail using rendered (smoothed) positions
+            this.trailHistory.unshift({ x: this.renderBallX, y: this.renderBallY });
             if (this.trailHistory.length > TRAIL_LEN) this.trailHistory.length = TRAIL_LEN;
             const flashing = time < this.trailFlashUntil;
             for (let i = 0; i < this.trail.length; i++) {
@@ -360,6 +387,13 @@ export class GameScene extends Scene {
         // Ball
         this.ball = this.add.circle(ARENA_W / 2, ARENA_H / 2, BALL_RADIUS, COLORS.ball);
         this.playLayer.add(this.ball);
+
+        // Initialize render-state targets so first frame doesn't lerp from 0.
+        const room = net.room;
+        if (room?.state.ball) { this.renderBallX = room.state.ball.x; this.renderBallY = room.state.ball.y; }
+        else { this.renderBallX = ARENA_W / 2; this.renderBallY = ARENA_H / 2; }
+        this.renderPaddleP1X = room?.state.paddleP1?.x ?? ARENA_W / 2;
+        this.renderPaddleP2X = room?.state.paddleP2?.x ?? ARENA_W / 2;
     }
 
     private buildParticleTexture() {

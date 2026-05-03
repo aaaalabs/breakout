@@ -40,9 +40,11 @@ export const BALL_MAX_SPEED = 1100;
 // Paddle hit-angle: contact point on paddle controls deflection angle (Pong style)
 export const PADDLE_MAX_DEFLECT_ANGLE = (Math.PI / 180) * 70; // 70 deg from straight
 
-// Server tick + broadcast
+// Server tick + broadcast.
+// Higher patch rate = smoother ball motion on client (less interpolation jank);
+// trade-off is ~50% more bandwidth (~10 KB/s/player → ~15 KB/s/player). Trivial.
 export const SERVER_TICK_HZ = 60;
-export const SERVER_PATCH_HZ = 20;
+export const SERVER_PATCH_HZ = 30;
 
 // Match timing
 export const COUNTDOWN_SECONDS = 3;
