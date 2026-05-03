@@ -1,18 +1,26 @@
-// Boot scene. No assets to preload (procedural rendering) so this is just a
-// quick handoff that decides whether the user landed on a `?room=` URL and
-// should jump straight into joining, or just goes to the lobby.
+// Boot scene — preloads the brick atlas with chroma-key transparency, then
+// hands off to the lobby. While the small atlas (~30KB, sub-100ms) loads,
+// the page already shows the dark canvas + ambient motes.
 import { Scene } from 'phaser';
+import { preloadBrickAtlas } from '../../assets/brickAtlas';
 
 export class BootScene extends Scene {
     constructor() {
         super({ key: 'BootScene' });
     }
 
-    create() {
+    async create() {
         const params = new URLSearchParams(window.location.search);
         const roomId = params.get('room')?.trim() ?? '';
 
-        // Hand to lobby. Lobby decides whether to auto-join based on roomId.
+        // Preload + chroma-key-process the brick sprite atlas. Don't block
+        // the lobby — bricks aren't visible there. Best-effort.
+        try {
+            await preloadBrickAtlas(this);
+        } catch {
+            // Atlas failed → bricks fall back to procedural rectangles. Game still works.
+        }
+
         this.scene.start('LobbyScene', { autoJoinRoomId: roomId || undefined });
     }
 }

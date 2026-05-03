@@ -28,6 +28,7 @@ import { ComboMeter } from '../ComboMeter';
 import { BackgroundFx } from '../BackgroundFx';
 import { mountExitButton } from '../../ui/exitButton';
 import { flashBanner } from '../../ui/banner';
+import { BRICK_ATLAS_KEY, brickFrame } from '../../assets/brickAtlas';
 
 // 60Hz paddle sends — halves the worst-case "ball passed through paddle" window
 // from ~33ms to ~17ms when a player flicks at the last moment.
@@ -52,11 +53,8 @@ export class GameScene extends Scene {
     private trailHistory: Array<{ x: number; y: number }> = [];
 
     // Brick sprite arrays match index of bricksP1 / bricksP2 in state
-    private bricksP1: (Phaser.GameObjects.Rectangle | null)[] = [];
-    private bricksP2: (Phaser.GameObjects.Rectangle | null)[] = [];
-    // Optional emoji icon for special bricks (parallel arrays)
-    private brickIconsP1: (Phaser.GameObjects.Text | null)[] = [];
-    private brickIconsP2: (Phaser.GameObjects.Text | null)[] = [];
+    private bricksP1: (Phaser.GameObjects.Image | null)[] = [];
+    private bricksP2: (Phaser.GameObjects.Image | null)[] = [];
 
     // HUD
     private hudP1!: Phaser.GameObjects.Text;
@@ -444,66 +442,37 @@ export class GameScene extends Scene {
         this.brickLayer.removeAll(true);
         this.bricksP1 = [];
         this.bricksP2 = [];
-        this.brickIconsP1 = [];
-        this.brickIconsP2 = [];
 
         room.state.bricksP1.forEach((brick) => {
-            this.bricksP1.push(this.makeBrick(brick.x, brick.y, this.brickColor('p1', brick.maxHp, brick.hp, brick.kind), brick.alive === 1));
-            this.brickIconsP1.push(this.makeBrickIcon(brick.x, brick.y, brick.kind, brick.alive === 1));
+            this.bricksP1.push(this.makeBrick(brick.x, brick.y, brick.kind, 'p1', brick.alive === 1));
         });
         room.state.bricksP2.forEach((brick) => {
-            this.bricksP2.push(this.makeBrick(brick.x, brick.y, this.brickColor('p2', brick.maxHp, brick.hp, brick.kind), brick.alive === 1));
-            this.brickIconsP2.push(this.makeBrickIcon(brick.x, brick.y, brick.kind, brick.alive === 1));
+            this.bricksP2.push(this.makeBrick(brick.x, brick.y, brick.kind, 'p2', brick.alive === 1));
         });
-    }
-
-    private brickColor(slot: PlayerSlot, maxHp: number, hp: number, kind?: string): number {
-        if (kind === 'gift') return 0xffd166;
-        if (kind === 'diamond') return 0x9d8df1;
-        if (kind === 'bomb') return 0xff6b6b;
-        if (maxHp >= 2) {
-            return hp >= 2 ? COLORS.ironBrick : COLORS.ironBrickHurt;
-        }
-        return slot === 'p1' ? COLORS.p1Brick : COLORS.p2Brick;
-    }
-
-    private brickEmoji(kind: string | undefined): string | null {
-        if (kind === 'gift')    return '🎁';
-        if (kind === 'diamond') return '💎';
-        if (kind === 'bomb')    return '💣';
-        return null;
-    }
-
-    private makeBrickIcon(x: number, y: number, kind: string, alive: boolean): Phaser.GameObjects.Text | null {
-        if (!alive) return null;
-        const emoji = this.brickEmoji(kind);
-        if (!emoji) return null;
-        const t = this.add.text(x, y, emoji, {
-            fontFamily: THEME.fontFamilyEmoji,
-            fontSize: '14px',
-        }).setOrigin(0.5);
-        this.brickLayer.add(t);
-        this.tweens.add({
-            targets: t,
-            scale: { from: 0.92, to: 1.10 },
-            duration: 1200,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut',
-        });
-        return t;
     }
 
     private rebuildBricks() {
         this.buildBricksFromState();
     }
 
-    private makeBrick(x: number, y: number, color: number, alive: boolean): Phaser.GameObjects.Rectangle | null {
+    private makeBrick(x: number, y: number, kind: string, slot: PlayerSlot, alive: boolean): Phaser.GameObjects.Image | null {
         if (!alive) return null;
+        const atlasReady = this.textures.exists(BRICK_ATLAS_KEY);
+        if (atlasReady) {
+            const img = this.add.image(x, y, BRICK_ATLAS_KEY, brickFrame(kind, slot))
+                .setDisplaySize(BRICK_W, BRICK_H);
+            this.brickLayer.add(img);
+            return img;
+        }
+        const color = kind === 'iron' ? COLORS.ironBrick
+            : kind === 'gift' ? 0xffd166
+            : kind === 'diamond' ? 0x9d8df1
+            : kind === 'bomb' ? 0xff6b6b
+            : (slot === 'p1' ? COLORS.p1Brick : COLORS.p2Brick);
         const r = this.add.rectangle(x, y, BRICK_W, BRICK_H, color);
         r.setStrokeStyle(1, color, 1);
         this.brickLayer.add(r);
-        return r;
+        return r as unknown as Phaser.GameObjects.Image;
     }
 
     // ------------------------------------------------------------------
@@ -537,9 +506,7 @@ export class GameScene extends Scene {
 
     private handleBrickChange(slot: PlayerSlot, idx: number, alive: number) {
         const arr = slot === 'p1' ? this.bricksP1 : this.bricksP2;
-        const iconArr = slot === 'p1' ? this.brickIconsP1 : this.brickIconsP2;
         const sprite = arr[idx];
-        const icon = iconArr[idx];
         const stateArr = slot === 'p1' ? net.room?.state.bricksP1 : net.room?.state.bricksP2;
         const stateBrick = stateArr?.at(idx);
 
@@ -547,7 +514,11 @@ export class GameScene extends Scene {
             // Destruction tween + particle burst
             const x = sprite.x;
             const y = sprite.y;
-            const color = stateBrick ? this.brickColor(slot, stateBrick.maxHp, 0, stateBrick.kind) : (slot === 'p1' ? COLORS.p1Brick : COLORS.p2Brick);
+            const color = stateBrick?.kind === 'gift' ? 0xffd166
+                : stateBrick?.kind === 'diamond' ? 0x9d8df1
+                : stateBrick?.kind === 'bomb' ? 0xff6b6b
+                : stateBrick?.kind === 'iron' ? COLORS.ironBrick
+                : (slot === 'p1' ? COLORS.p1Brick : COLORS.p2Brick);
             this.tweens.add({
                 targets: sprite,
                 scale: 0,
@@ -557,18 +528,10 @@ export class GameScene extends Scene {
                 onComplete: () => sprite.destroy(),
             });
             arr[idx] = null;
-            // Remove emoji icon if any
-            if (icon) {
-                this.tweens.killTweensOf(icon);
-                icon.destroy();
-                iconArr[idx] = null;
-            }
             this.spawnBrickBurst(x, y, color);
         } else if (alive === 1 && stateBrick && sprite) {
-            // Iron brick took damage but survived — flip color to "hurt" tint
-            const newColor = this.brickColor(slot, stateBrick.maxHp, stateBrick.hp);
-            sprite.setFillStyle(newColor, 1);
-            sprite.setStrokeStyle(1, newColor, 1);
+            // Iron brick took damage but survived — tint to "hurt" + shake
+            sprite.setTint(0xc8c8d8);
             const ox = sprite.x;
             this.tweens.killTweensOf(sprite);
             this.tweens.add({
@@ -582,14 +545,15 @@ export class GameScene extends Scene {
             });
         } else if (alive === 1 && !sprite && stateBrick) {
             // Resurrection — either rematch (instant) or garbage (animated drop-in)
-            const color = this.brickColor(slot, stateBrick.maxHp, stateBrick.hp, stateBrick.kind);
-            const newSprite = this.makeBrick(stateBrick.x, stateBrick.y, color, true);
+            const newSprite = this.makeBrick(stateBrick.x, stateBrick.y, stateBrick.kind, slot, true);
             arr[idx] = newSprite;
-            iconArr[idx] = this.makeBrickIcon(stateBrick.x, stateBrick.y, stateBrick.kind, true);
             // Garbage drop-in: brick falls from above with a small bounce
             if (newSprite) {
                 const targetY = stateBrick.y;
                 newSprite.y = targetY - 60;
+                const ds = (newSprite as Phaser.GameObjects.Image).displayWidth
+                    ? { displayWidth: BRICK_W, displayHeight: BRICK_H }
+                    : null;
                 newSprite.setScale(0);
                 this.tweens.add({
                     targets: newSprite,
@@ -597,13 +561,12 @@ export class GameScene extends Scene {
                     scale: 1,
                     duration: 360,
                     ease: 'Back.easeOut',
+                    onComplete: () => {
+                        if (ds && (newSprite as Phaser.GameObjects.Image).setDisplaySize) {
+                            (newSprite as Phaser.GameObjects.Image).setDisplaySize(BRICK_W, BRICK_H);
+                        }
+                    },
                 });
-                if (iconArr[idx]) {
-                    const ic = iconArr[idx]!;
-                    ic.y = targetY - 60;
-                    ic.setAlpha(0);
-                    this.tweens.add({ targets: ic, y: targetY, alpha: 1, duration: 360, ease: 'Back.easeOut' });
-                }
             }
         }
     }

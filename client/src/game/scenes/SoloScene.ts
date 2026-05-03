@@ -27,6 +27,7 @@ import { ComboMeter } from '../ComboMeter';
 import { BackgroundFx } from '../BackgroundFx';
 import { mountExitButton } from '../../ui/exitButton';
 import { flashBanner, mountHint } from '../../ui/banner';
+import { BRICK_ATLAS_KEY, brickFrame } from '../../assets/brickAtlas';
 
 const SOLO_ROWS = BRICK_ROWS_PER_PLAYER * 2;
 const PADDLE_Y_SOLO = ARENA_H - THUMB_ZONE - PADDLE_H / 2 - 20;
@@ -41,20 +42,14 @@ type BrickKind = 'normal' | 'iron' | 'gift' | 'diamond' | 'bomb';
 interface Brick {
     x: number; y: number;
     alive: boolean;
-    sprite: Phaser.GameObjects.Rectangle;
-    iconText?: Phaser.GameObjects.Text;  // emoji hint for special bricks
+    sprite: Phaser.GameObjects.Image;
     color: number;
     hp: number; maxHp: number;
     kind: BrickKind;
 }
 
-const BRICK_KIND_VISUAL: Record<BrickKind, { emoji?: string; color?: number; halo?: number }> = {
-    normal:  {},
-    iron:    {},
-    gift:    { emoji: '🎁', halo: 0xffd166 },
-    diamond: { emoji: '💎', halo: 0x9d8df1 },
-    bomb:    { emoji: '💣', halo: 0xff6b6b },
-};
+// Note: brick visuals come from the sprite atlas now (assets/brickAtlas.ts).
+// BrickKind type is the source of truth; visual mapping is in brickFrame().
 
 interface BallEntity {
     x: number; y: number; vx: number; vy: number;
@@ -317,8 +312,8 @@ export class SoloScene extends Scene {
     private damageBrick(brick: Brick) {
         sfx.wallHit();
         if (this.balls[0]) this.squashBall(this.balls[0], 'y', 0.5);
-        brick.sprite.setFillStyle(COLORS.ironBrickHurt, 0.92);
-        brick.sprite.setStrokeStyle(1, COLORS.ironBrickHurt, 0.8);
+        // Tint the sprite to indicate damage (works for both Image and Rectangle fallback)
+        brick.sprite.setTint(0xc8c8d8);
         const ox = brick.sprite.x;
         this.tweens.killTweensOf(brick.sprite);
         this.tweens.add({
@@ -379,9 +374,6 @@ export class SoloScene extends Scene {
     private killBrick(brick: Brick) {
         brick.alive = false;
         this.aliveCount--;
-        // Destroy icon text if any
-        brick.iconText?.destroy();
-        brick.iconText = undefined;
 
         const result = this.combo.register(this.time.now);
         this.score += 10 + result.bonus;
@@ -797,24 +789,25 @@ export class SoloScene extends Scene {
         const yStart = 80;
         const ironRows = new Set([3, 4]);
 
-        // Pre-pick ~6 random non-iron positions to be special bricks.
-        // Distribution: 40% gift, 35% diamond, 25% bomb. Visible emoji telegraphs effect.
         const totalCells = SOLO_ROWS * BRICK_COLS;
         const specialIndexes = new Set<number>();
         const specialKinds: Map<number, BrickKind> = new Map();
         while (specialIndexes.size < 7) {
             const idx = Math.floor(Math.random() * totalCells);
             const row = Math.floor(idx / BRICK_COLS);
-            if (ironRows.has(row)) continue;       // iron + special = confused, skip
+            if (ironRows.has(row)) continue;
             if (specialIndexes.has(idx)) continue;
             specialIndexes.add(idx);
             const r = Math.random();
             specialKinds.set(idx, r < 0.40 ? 'gift' : r < 0.75 ? 'diamond' : 'bomb');
         }
 
+        const atlasReady = this.textures.exists(BRICK_ATLAS_KEY);
+        const slotForRow = (row: number): 'p1' | 'p2' =>
+            row < SOLO_ROWS / 2 ? 'p1' : 'p2';
+
         let cellIdx = 0;
         for (let row = 0; row < SOLO_ROWS; row++) {
-            const ratio = row / (SOLO_ROWS - 1);
             const isIron = ironRows.has(row);
             for (let col = 0; col < BRICK_COLS; col++, cellIdx++) {
                 const x = BRICK_GAP + col * (BRICK_W + BRICK_GAP) + BRICK_W / 2;
@@ -824,40 +817,26 @@ export class SoloScene extends Scene {
                 if (isIron) kind = 'iron';
                 else if (specialKinds.has(cellIdx)) kind = specialKinds.get(cellIdx)!;
 
-                const visual = BRICK_KIND_VISUAL[kind];
-                const isSpecial = !!visual.emoji;
-                const color = isIron ? COLORS.ironBrick
-                    : isSpecial ? (visual.halo ?? COLORS.p1Brick)
-                    : (ratio < 0.5 ? COLORS.p1Brick : COLORS.p2Brick);
-
-                const sprite = this.add.rectangle(x, y, BRICK_W, BRICK_H, color, 0.92);
-                sprite.setStrokeStyle(1, color, 0.6);
-                this.brickLayer.add(sprite);
-
-                let iconText: Phaser.GameObjects.Text | undefined;
-                if (visual.emoji) {
-                    iconText = this.add.text(x, y, visual.emoji, {
-                        fontFamily: THEME.fontFamilyEmoji,
-                        fontSize: '14px',
-                    }).setOrigin(0.5);
-                    this.brickLayer.add(iconText);
-                    // Subtle pulse so the special bricks call attention to themselves
-                    this.tweens.add({
-                        targets: iconText,
-                        scale: { from: 0.92, to: 1.10 },
-                        duration: 1200,
-                        yoyo: true,
-                        repeat: -1,
-                        ease: 'Sine.easeInOut',
-                    });
+                let sprite: Phaser.GameObjects.Image;
+                if (atlasReady) {
+                    sprite = this.add.image(x, y, BRICK_ATLAS_KEY, brickFrame(kind, slotForRow(row)))
+                        .setDisplaySize(BRICK_W, BRICK_H);
+                } else {
+                    // Fallback: colored rectangle if atlas failed to load
+                    const fallbackColor = kind === 'iron' ? COLORS.ironBrick
+                        : kind === 'gift' ? 0xffd166
+                        : kind === 'diamond' ? 0x9d8df1
+                        : kind === 'bomb' ? 0xff6b6b
+                        : (slotForRow(row) === 'p1' ? COLORS.p1Brick : COLORS.p2Brick);
+                    sprite = this.add.rectangle(x, y, BRICK_W, BRICK_H, fallbackColor, 0.92) as unknown as Phaser.GameObjects.Image;
                 }
+                this.brickLayer.add(sprite);
 
                 this.bricks.push({
                     x, y,
                     alive: true,
                     sprite,
-                    iconText,
-                    color,
+                    color: COLORS.p1Brick,
                     hp: isIron ? 2 : 1,
                     maxHp: isIron ? 2 : 1,
                     kind,
