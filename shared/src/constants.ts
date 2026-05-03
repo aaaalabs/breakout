@@ -6,7 +6,10 @@ export const ARENA_H = 1000;
 
 export const PADDLE_W = 110;
 export const PADDLE_H = 14;
-export const PADDLE_OFFSET_FROM_WALL = 36;
+// 80px thumb zone (top + bottom) so finger control on mobile doesn't cover the paddle.
+// Symmetric so Versus both players have breathing room on their own phone.
+export const THUMB_ZONE = 80;
+export const PADDLE_OFFSET_FROM_WALL = THUMB_ZONE + 36;
 
 // Top paddle Y (player 1) and bottom paddle Y (player 2)
 export const PADDLE_Y = {

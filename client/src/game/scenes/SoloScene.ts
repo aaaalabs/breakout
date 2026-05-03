@@ -20,12 +20,14 @@ import {
     PADDLE_H,
     PADDLE_MAX_DEFLECT_ANGLE,
     PADDLE_W,
+    THUMB_ZONE,
 } from '@breakout/shared';
 import { THEME } from '../../ui/theme';
 import { sfx } from '../../audio/Sfx';
 
 const SOLO_ROWS = BRICK_ROWS_PER_PLAYER * 2; // double the wall vs vs-mode (8 rows)
-const PADDLE_Y_SOLO = ARENA_H - 60;
+// Paddle sits THUMB_ZONE above the bottom edge so finger controls UNDER the paddle on mobile
+const PADDLE_Y_SOLO = ARENA_H - THUMB_ZONE - PADDLE_H / 2 - 20;
 const STARTING_LIVES = 3;
 
 interface Brick {
