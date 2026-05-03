@@ -24,6 +24,7 @@ import type {
 import { net } from '../../network/Net';
 import { THEME } from '../../ui/theme';
 import { sfx } from '../../audio/Sfx';
+import { ComboMeter } from '../ComboMeter';
 
 const SEND_HZ = 30;
 const SEND_INTERVAL_MS = 1000 / SEND_HZ;
@@ -75,6 +76,7 @@ export class GameScene extends Scene {
     private renderBallY = 0;
     private renderPaddleP1X = 0;
     private renderPaddleP2X = 0;
+    private combo!: ComboMeter;
 
     constructor() {
         super({ key: 'GameScene' });
@@ -102,6 +104,9 @@ export class GameScene extends Scene {
         this.buildPaddlesAndBall();
         this.buildParticleTexture();
         this.buildBricksFromState();
+
+        // Combo meter — top center (above any HUD text)
+        this.combo = new ComboMeter(this, { x: ARENA_W / 2, y: 110, layer: this.hudLayer });
 
         // Determine our slot
         this.mySlot = (room.state.playerSlot.get(room.sessionId) as PlayerSlot | undefined) ?? null;
@@ -186,6 +191,7 @@ export class GameScene extends Scene {
         const room = net.room;
         if (!room) return;
         const state = room.state;
+        this.combo?.tick(time);
 
         // Frame-rate-independent smoothing factor (~30Hz half-life).
         // Higher = snappier (less lag) but more visual jitter at low patch rate.
@@ -491,9 +497,13 @@ export class GameScene extends Scene {
         }
     }
 
-    private handleBrickBreak(_ev: BrickBreakEvent) {
+    private handleBrickBreak(ev: BrickBreakEvent) {
         sfx.brickBreak();
         sfx.maybeCombo();
+        // Only count MY bricks (the ones I'm clearing) toward MY combo.
+        if (ev.slot === this.mySlot) {
+            this.combo.register(this.time.now);
+        }
     }
 
     private handlePaddleHit(ev: PaddleHitEvent) {

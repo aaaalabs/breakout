@@ -24,6 +24,7 @@ import {
 } from '@breakout/shared';
 import { THEME } from '../../ui/theme';
 import { sfx } from '../../audio/Sfx';
+import { ComboMeter } from '../ComboMeter';
 
 const SOLO_ROWS = BRICK_ROWS_PER_PLAYER * 2; // double the wall vs vs-mode (8 rows)
 // Paddle sits THUMB_ZONE above the bottom edge so finger controls UNDER the paddle on mobile
@@ -67,6 +68,7 @@ export class SoloScene extends Scene {
     private hudScore!: Phaser.GameObjects.Text;
     private hudLives!: Phaser.GameObjects.Text;
     private hudHint!: Phaser.GameObjects.Text;
+    private combo!: ComboMeter;
 
     private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
     private keyA?: Phaser.Input.Keyboard.Key;
@@ -90,6 +92,9 @@ export class SoloScene extends Scene {
         this.buildParticleTexture();
         this.buildBricks();
         this.buildPaddleAndBall();
+
+        // Combo meter — top center
+        this.combo = new ComboMeter(this, { x: ARENA_W / 2, y: 64, layer: this.hudLayer });
 
         // Slide-in entrance
         const containers = [this.bgLayer, this.brickLayer, this.playLayer, this.hudLayer];
@@ -127,8 +132,9 @@ export class SoloScene extends Scene {
         this.events.once('destroy', () => this.cleanup());
     }
 
-    update(_time: number, deltaMs: number) {
+    update(time: number, deltaMs: number) {
         const dt = Math.min(0.05, deltaMs / 1000);
+        this.combo?.tick(time);
 
         // Keyboard movement
         const left = this.cursors?.left.isDown || this.keyA?.isDown;
@@ -224,7 +230,8 @@ export class SoloScene extends Scene {
     private killBrick(brick: Brick) {
         brick.alive = false;
         this.aliveCount--;
-        this.score += 10;
+        const result = this.combo.register(this.time.now);
+        this.score += 10 + result.bonus;
         this.hudScore.setText(`${this.score}`);
         sfx.brickBreak();
         sfx.maybeCombo();
