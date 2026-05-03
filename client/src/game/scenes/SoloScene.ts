@@ -126,6 +126,23 @@ export class SoloScene extends Scene {
     constructor() { super({ key: 'SoloScene' }); }
 
     create() {
+        // Reset state — class field initializers DON'T fire on scene.restart(),
+        // they only run at construction. Without this, restart leaves stale refs
+        // to destroyed sprites in this.balls / this.powerUps and the ball
+        // appears stranded mid-arena.
+        this.balls = [];
+        this.powerUps = [];
+        this.activeEffects = [];
+        this.effectIcons = new Map();
+        this.bricks = [];
+        this.aliveCount = 0;
+        this.lives = STARTING_LIVES;
+        this.score = 0;
+        this.speedTier = 0;
+        this.finished = false;
+        this.freezeUntil = 0;
+        this.kbPaddleX = null;
+
         this.cameras.main.setBackgroundColor(`#${COLORS.bg.toString(16).padStart(6, '0')}`);
         this.bgLayer = this.add.container(0, 0);
         this.brickLayer = this.add.container(0, 0);
