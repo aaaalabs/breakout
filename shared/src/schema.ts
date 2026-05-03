@@ -4,6 +4,8 @@ export class Brick extends Schema {
     @type('number') x: number = 0;
     @type('number') y: number = 0;
     @type('uint8') alive: number = 1; // 1 = alive, 0 = destroyed
+    @type('uint8') hp: number = 1;    // remaining hits to destroy
+    @type('uint8') maxHp: number = 1; // initial hp (for damage-state rendering)
 }
 
 export class Paddle extends Schema {

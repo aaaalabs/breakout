@@ -65,6 +65,8 @@ export const COLORS = {
     p2: 0xff5fb8, // magenta — bottom
     p1Brick: 0x00d4d4,
     p2Brick: 0xe048a0,
+    ironBrick: 0x6c7090, // 2-hit gray brick — sits in front of player's color row
+    ironBrickHurt: 0x9398b8, // damaged state (1 HP left)
     ball: 0xfafaff,
     ballTrail: 0xfafaff,
     text: 0xe8e8f4,

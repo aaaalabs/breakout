@@ -418,12 +418,19 @@ export class GameScene extends Scene {
         this.bricksP1 = [];
         this.bricksP2 = [];
 
-        room.state.bricksP1.forEach((brick, _idx) => {
-            this.bricksP1.push(this.makeBrick(brick.x, brick.y, COLORS.p1Brick, brick.alive === 1));
+        room.state.bricksP1.forEach((brick) => {
+            this.bricksP1.push(this.makeBrick(brick.x, brick.y, this.brickColor('p1', brick.maxHp, brick.hp), brick.alive === 1));
         });
-        room.state.bricksP2.forEach((brick, _idx) => {
-            this.bricksP2.push(this.makeBrick(brick.x, brick.y, COLORS.p2Brick, brick.alive === 1));
+        room.state.bricksP2.forEach((brick) => {
+            this.bricksP2.push(this.makeBrick(brick.x, brick.y, this.brickColor('p2', brick.maxHp, brick.hp), brick.alive === 1));
         });
+    }
+
+    private brickColor(slot: PlayerSlot, maxHp: number, hp: number): number {
+        if (maxHp >= 2) {
+            return hp >= 2 ? COLORS.ironBrick : COLORS.ironBrickHurt;
+        }
+        return slot === 'p1' ? COLORS.p1Brick : COLORS.p2Brick;
     }
 
     private rebuildBricks() {
@@ -434,7 +441,6 @@ export class GameScene extends Scene {
         if (!alive) return null;
         const r = this.add.rectangle(x, y, BRICK_W, BRICK_H, color);
         r.setStrokeStyle(1, color, 1);
-        // Subtle inner darkening: stack a translucent rectangle on top
         this.brickLayer.add(r);
         return r;
     }
@@ -471,11 +477,14 @@ export class GameScene extends Scene {
     private handleBrickChange(slot: PlayerSlot, idx: number, alive: number) {
         const arr = slot === 'p1' ? this.bricksP1 : this.bricksP2;
         const sprite = arr[idx];
+        const stateArr = slot === 'p1' ? net.room?.state.bricksP1 : net.room?.state.bricksP2;
+        const stateBrick = stateArr?.at(idx);
+
         if (alive === 0 && sprite) {
             // Destruction tween + particle burst
             const x = sprite.x;
             const y = sprite.y;
-            const color = slot === 'p1' ? COLORS.p1Brick : COLORS.p2Brick;
+            const color = stateBrick ? this.brickColor(slot, stateBrick.maxHp, 0) : (slot === 'p1' ? COLORS.p1Brick : COLORS.p2Brick);
             this.tweens.add({
                 targets: sprite,
                 scale: 0,
@@ -486,12 +495,25 @@ export class GameScene extends Scene {
             });
             arr[idx] = null;
             this.spawnBrickBurst(x, y, color);
-        } else if (alive === 1 && !sprite) {
+        } else if (alive === 1 && stateBrick && sprite) {
+            // Iron brick took damage but survived — flip color to "hurt" tint
+            const newColor = this.brickColor(slot, stateBrick.maxHp, stateBrick.hp);
+            sprite.setFillStyle(newColor, 1);
+            sprite.setStrokeStyle(1, newColor, 1);
+            const ox = sprite.x;
+            this.tweens.killTweensOf(sprite);
+            this.tweens.add({
+                targets: sprite,
+                x: { from: ox - 2, to: ox + 2 },
+                duration: 40,
+                yoyo: true,
+                repeat: 1,
+                ease: 'Sine.easeInOut',
+                onComplete: () => sprite.setX(ox),
+            });
+        } else if (alive === 1 && !sprite && stateBrick) {
             // Resurrection (rematch)
-            const stateBrick =
-                slot === 'p1' ? net.room?.state.bricksP1.at(idx) : net.room?.state.bricksP2.at(idx);
-            if (!stateBrick) return;
-            const color = slot === 'p1' ? COLORS.p1Brick : COLORS.p2Brick;
+            const color = this.brickColor(slot, stateBrick.maxHp, stateBrick.hp);
             arr[idx] = this.makeBrick(stateBrick.x, stateBrick.y, color, true);
         }
     }

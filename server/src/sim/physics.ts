@@ -153,6 +153,14 @@ function handleBrickCollisions(
             ball.y += dy > 0 ? overlapY : -overlapY;
         }
 
+        // Multi-hit: decrement HP. Only destroy when HP reaches 0.
+        brick.hp = Math.max(0, brick.hp - 1);
+        if (brick.hp > 0) {
+            // Keep brick alive, but emit hit event so client can play 'thunk' SFX + flash
+            events.push({ kind: 'wallHit', side: 'top', x: brick.x, y: brick.y });
+            return;
+        }
+
         brick.alive = 0;
         if (slot === 'p1') state.aliveCountP1--;
         else state.aliveCountP2--;

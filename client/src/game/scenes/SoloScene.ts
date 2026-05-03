@@ -37,6 +37,8 @@ interface Brick {
     alive: boolean;
     sprite: Phaser.GameObjects.Rectangle;
     color: number;
+    hp: number;
+    maxHp: number;
 }
 
 interface BallState {
@@ -230,10 +232,37 @@ export class SoloScene extends Scene {
                 b.vy = bdy > 0 ? Math.abs(b.vy) : -Math.abs(b.vy);
                 b.y += bdy > 0 ? overlapY : -overlapY;
             }
-            this.killBrick(brick);
+            // Multi-hit handling: decrement HP, only destroy when 0
+            brick.hp -= 1;
+            if (brick.hp > 0) {
+                this.damageBrick(brick);
+            } else {
+                this.killBrick(brick);
+            }
             return false;
         }
         return false;
+    }
+
+    /** Iron brick took a hit but survived. Visual + audio cue. */
+    private damageBrick(brick: Brick) {
+        sfx.wallHit();
+        this.squashBall('y', 0.5);
+        // Color flips to "hurt" tint
+        brick.sprite.setFillStyle(COLORS.ironBrickHurt, 0.92);
+        brick.sprite.setStrokeStyle(1, COLORS.ironBrickHurt, 0.8);
+        // Shake the brick briefly
+        const ox = brick.sprite.x;
+        this.tweens.killTweensOf(brick.sprite);
+        this.tweens.add({
+            targets: brick.sprite,
+            x: { from: ox - 2, to: ox + 2 },
+            duration: 40,
+            yoyo: true,
+            repeat: 1,
+            ease: 'Sine.easeInOut',
+            onComplete: () => brick.sprite.setX(ox),
+        });
     }
 
     private killBrick(brick: Brick) {
@@ -468,17 +497,20 @@ export class SoloScene extends Scene {
     private buildBricks() {
         this.bricks = [];
         const yStart = 80;
+        // 2 iron rows in the middle of the wall (rows 3-4 of 8): visible challenge,
+        // not punishing on the front (player's first hits feel rewarding).
+        const ironRows = new Set([3, 4]);
         for (let row = 0; row < SOLO_ROWS; row++) {
-            // Color rows from p1 (cyan) at top to p2 (magenta) at bottom — palette ramp
             const ratio = row / (SOLO_ROWS - 1);
-            const color = ratio < 0.5 ? COLORS.p1Brick : COLORS.p2Brick;
+            const isIron = ironRows.has(row);
+            const color = isIron ? COLORS.ironBrick : (ratio < 0.5 ? COLORS.p1Brick : COLORS.p2Brick);
             for (let col = 0; col < BRICK_COLS; col++) {
                 const x = BRICK_GAP + col * (BRICK_W + BRICK_GAP) + BRICK_W / 2;
                 const y = yStart + row * (BRICK_H + BRICK_GAP) + BRICK_H / 2;
                 const sprite = this.add.rectangle(x, y, BRICK_W, BRICK_H, color, 0.92);
                 sprite.setStrokeStyle(1, color, 0.6);
                 this.brickLayer.add(sprite);
-                this.bricks.push({ x, y, alive: true, sprite, color });
+                this.bricks.push({ x, y, alive: true, sprite, color, hp: isIron ? 2 : 1, maxHp: isIron ? 2 : 1 });
             }
         }
         this.aliveCount = this.bricks.length;
