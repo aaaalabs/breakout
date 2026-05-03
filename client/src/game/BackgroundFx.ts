@@ -1,6 +1,7 @@
 // Background "motes" + reactive pulse — subtle ambient depth that responds
 // to game events (combo tiers, power-up pickups, win moment).
 
+import { BlendModes } from 'phaser';
 import { ARENA_W, ARENA_H, COLORS } from '@breakout/shared';
 
 interface Mote {
@@ -41,7 +42,7 @@ export class BackgroundFx {
 
         // Pulse rect over the arena (full-cover, low alpha when pulsing)
         this.pulseRect = scene.add.rectangle(ARENA_W / 2, ARENA_H / 2, ARENA_W, ARENA_H, 0xffffff, 0)
-            .setBlendMode(Phaser.BlendModes.ADD);
+            .setBlendMode(BlendModes.ADD);
         this.layer.add(this.pulseRect);
     }
 
