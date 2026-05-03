@@ -242,7 +242,7 @@ export class GameScene extends Scene {
 
         const cur = this.kbPaddleX ?? myPaddle.x;
         const dir = (right ? 1 : 0) - (left ? 1 : 0);
-        const next = Phaser.Math.Clamp(cur + dir * speed * (deltaMs / 1000), 0, ARENA_W);
+        const next = Math.max(0, Math.min(ARENA_W, cur + dir * speed * (deltaMs / 1000)));
         this.kbPaddleX = next;
         myPaddle.x = next;
         (this as { _pendingX?: number })._pendingX = next;
@@ -406,7 +406,7 @@ export class GameScene extends Scene {
     private handlePointerMove(pointer: Phaser.Input.Pointer) {
         // pointer.worldX is in scaled coords → use Phaser's translation.
         // Works for mouse, touch (drag), and tap (pointerdown).
-        const x = Phaser.Math.Clamp(pointer.worldX, 0, ARENA_W);
+        const x = Math.max(0, Math.min(ARENA_W, pointer.worldX));
         // We update local paddle prediction immediately (instant feedback).
         if (this.mySlot === 'p1') this.paddleP1.x = x;
         else if (this.mySlot === 'p2') this.paddleP2.x = x;
@@ -464,7 +464,7 @@ export class GameScene extends Scene {
 
     private handlePaddleHit(ev: PaddleHitEvent) {
         // Camera shake + ball-trail flash. Intensity scales subtly.
-        const intensity = Phaser.Math.Clamp(ev.intensity ?? 0.5, 0.2, 1);
+        const intensity = Math.max(0.2, Math.min(1, ev.intensity ?? 0.5));
         this.cameras.main.shake(80, 0.0035 * intensity);
         this.trailFlashUntil = this.time.now + 100;
 

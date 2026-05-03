@@ -129,7 +129,7 @@ export class SoloScene extends Scene {
             const speed = 980;
             const cur = this.kbPaddleX ?? this.paddle.x;
             const dir = (right ? 1 : 0) - (left ? 1 : 0);
-            const next = Phaser.Math.Clamp(cur + dir * speed * dt, PADDLE_W / 2, ARENA_W - PADDLE_W / 2);
+            const next = Math.max(PADDLE_W / 2, Math.min(ARENA_W - PADDLE_W / 2, cur + dir * speed * dt));
             this.kbPaddleX = next;
             this.paddle.x = next;
         }
@@ -463,7 +463,7 @@ export class SoloScene extends Scene {
     }
 
     private handlePointer(pointer: Phaser.Input.Pointer) {
-        const x = Phaser.Math.Clamp(pointer.worldX, PADDLE_W / 2, ARENA_W - PADDLE_W / 2);
+        const x = Math.max(PADDLE_W / 2, Math.min(ARENA_W - PADDLE_W / 2, pointer.worldX));
         this.paddle.x = x;
         this.kbPaddleX = x;
     }
