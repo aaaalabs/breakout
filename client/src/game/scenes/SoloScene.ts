@@ -1,6 +1,5 @@
 // SoloScene — single-player Breakout. Pure local simulation, no server.
-// Classic loop: paddle at bottom, ball ricochets, full brick wall above.
-// Lose ball → -1 life. All bricks gone → win. Lives = 3.
+// Supports N balls (multi-ball power-up) and falling power-up pickups.
 
 import { Scene } from 'phaser';
 import {
@@ -26,28 +25,40 @@ import { THEME } from '../../ui/theme';
 import { sfx } from '../../audio/Sfx';
 import { ComboMeter } from '../ComboMeter';
 
-const SOLO_ROWS = BRICK_ROWS_PER_PLAYER * 2; // double the wall vs vs-mode (8 rows)
-// Paddle sits THUMB_ZONE above the bottom edge so finger controls UNDER the paddle on mobile
+const SOLO_ROWS = BRICK_ROWS_PER_PLAYER * 2;
 const PADDLE_Y_SOLO = ARENA_H - THUMB_ZONE - PADDLE_H / 2 - 20;
 const STARTING_LIVES = 3;
 
+const POWERUP_DROP_CHANCE = 0.10;        // base chance per non-iron brick
+const IRON_POWERUP_DROP_CHANCE = 0.30;   // higher chance for iron (risk → reward)
+const POWERUP_FALL_SPEED = 220;          // px/s
+
 interface Brick {
-    x: number;
-    y: number;
+    x: number; y: number;
     alive: boolean;
     sprite: Phaser.GameObjects.Rectangle;
     color: number;
-    hp: number;
-    maxHp: number;
+    hp: number; maxHp: number;
 }
 
-interface BallState {
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    onPaddle: boolean;
+interface BallEntity {
+    x: number; y: number; vx: number; vy: number;
+    onPaddle: boolean;        // true only for the very first ball before launch
+    sprite: Phaser.GameObjects.Arc;
+    glow: Phaser.GameObjects.Arc;
 }
+
+type PowerUpType = 'multi-ball';
+
+interface PowerUp {
+    type: PowerUpType;
+    x: number; y: number;
+    container: Phaser.GameObjects.Container;
+}
+
+const POWERUP_VISUAL: Record<PowerUpType, { emoji: string; color: number; label: string }> = {
+    'multi-ball': { emoji: '⚡', color: 0xffd166, label: 'MULTI-BALL' },
+};
 
 export class SoloScene extends Scene {
     private bgLayer!: Phaser.GameObjects.Container;
@@ -56,16 +67,15 @@ export class SoloScene extends Scene {
     private hudLayer!: Phaser.GameObjects.Container;
 
     private paddle!: Phaser.GameObjects.Rectangle;
-    private ball!: Phaser.GameObjects.Arc;
-    private ballGlow!: Phaser.GameObjects.Arc;
-
     private bricks: Brick[] = [];
     private aliveCount = 0;
     private lives = STARTING_LIVES;
     private score = 0;
     private speedTier = 0;
-    private ballState: BallState = { x: 0, y: 0, vx: 0, vy: 0, onPaddle: true };
     private finished = false;
+
+    private balls: BallEntity[] = [];
+    private powerUps: PowerUp[] = [];
 
     private hudScore!: Phaser.GameObjects.Text;
     private hudLives!: Phaser.GameObjects.Text;
@@ -79,9 +89,7 @@ export class SoloScene extends Scene {
     private particleKey = 'spark-solo';
     private freezeUntil = 0;
 
-    constructor() {
-        super({ key: 'SoloScene' });
-    }
+    constructor() { super({ key: 'SoloScene' }); }
 
     create() {
         this.cameras.main.setBackgroundColor(`#${COLORS.bg.toString(16).padStart(6, '0')}`);
@@ -94,41 +102,33 @@ export class SoloScene extends Scene {
         this.buildHud();
         this.buildParticleTexture();
         this.buildBricks();
-        this.buildPaddleAndBall();
+        this.buildPaddle();
+        this.spawnBall(true); // initial sticky ball
 
-        // Combo meter — top center
         this.combo = new ComboMeter(this, { x: ARENA_W / 2, y: 64, layer: this.hudLayer });
 
-        // Slide-in entrance
         const containers = [this.bgLayer, this.brickLayer, this.playLayer, this.hudLayer];
         containers.forEach((c) => c.setY(40));
         this.tweens.add({
             targets: containers,
-            y: 0,
-            alpha: { from: 0, to: 1 },
-            duration: THEME.dur.long,
-            ease: THEME.ease.out,
+            y: 0, alpha: { from: 0, to: 1 },
+            duration: THEME.dur.long, ease: THEME.ease.out,
         });
 
-        // Input — also unlocks audio context (browser policy)
         this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.handlePointer(p));
         this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
             sfx.unlock();
             this.handlePointer(p);
-            if (this.ballState.onPaddle) this.launchBall();
+            this.tryLaunchAll();
         });
         if (this.input.keyboard) {
             this.cursors = this.input.keyboard.createCursorKeys();
             this.keyA = this.input.keyboard.addKey('A');
             this.keyD = this.input.keyboard.addKey('D');
-            this.input.keyboard.on('keydown-SPACE', () => {
-                sfx.unlock();
-                if (this.ballState.onPaddle) this.launchBall();
-            });
+            this.input.keyboard.on('keydown-SPACE', () => { sfx.unlock(); this.tryLaunchAll(); });
             this.input.keyboard.on('keydown-ESC', () => this.exit());
         }
 
-        // Game-start jingle (after a tiny delay so user has visual context)
         this.time.delayedCall(220, () => sfx.soloStart());
 
         this.events.once('shutdown', () => this.cleanup());
@@ -138,9 +138,6 @@ export class SoloScene extends Scene {
     update(time: number, deltaMs: number) {
         const dt = Math.min(0.05, deltaMs / 1000);
         this.combo?.tick(time);
-
-        // Hit-stop: freeze the world briefly for impact moments. Renders + tweens
-        // continue (so the camera shake & particles still play), only the sim pauses.
         const frozen = time < this.freezeUntil;
 
         // Keyboard movement
@@ -157,43 +154,76 @@ export class SoloScene extends Scene {
 
         if (this.finished) return;
 
-        if (this.ballState.onPaddle) {
-            this.ballState.x = this.paddle.x;
-            this.ballState.y = PADDLE_Y_SOLO - PADDLE_H / 2 - BALL_RADIUS - 4;
-        } else if (!frozen) {
-            this.stepBall(dt);
+        // Step every ball
+        for (const b of this.balls) {
+            if (b.onPaddle) {
+                b.x = this.paddle.x;
+                b.y = PADDLE_Y_SOLO - PADDLE_H / 2 - BALL_RADIUS - 4;
+            } else if (!frozen) {
+                this.stepBall(b, dt);
+            }
+            b.sprite.setPosition(b.x, b.y);
+            b.glow.setPosition(b.x, b.y);
         }
 
-        this.ball.setPosition(this.ballState.x, this.ballState.y);
-        this.ballGlow.setPosition(this.ballState.x, this.ballState.y);
+        // Step power-ups (gravity)
+        if (!frozen) {
+            for (let i = this.powerUps.length - 1; i >= 0; i--) {
+                const pu = this.powerUps[i];
+                pu.y += POWERUP_FALL_SPEED * dt;
+                pu.container.y = pu.y;
+                // Caught by paddle?
+                if (
+                    pu.y > PADDLE_Y_SOLO - PADDLE_H / 2 - 18 &&
+                    pu.y < PADDLE_Y_SOLO + PADDLE_H / 2 + 18 &&
+                    Math.abs(pu.x - this.paddle.x) < PADDLE_W / 2 + 16
+                ) {
+                    this.applyPowerUp(pu.type);
+                    this.removePowerUp(i);
+                } else if (pu.y > ARENA_H + 40) {
+                    this.removePowerUp(i);
+                }
+            }
+        }
+
+        // Remove balls that dropped (below bottom)
+        for (let i = this.balls.length - 1; i >= 0; i--) {
+            const b = this.balls[i];
+            if (!b.onPaddle && b.y - BALL_RADIUS > ARENA_H) {
+                b.sprite.destroy();
+                b.glow.destroy();
+                this.balls.splice(i, 1);
+            }
+        }
+
+        // Out of balls = lose a life
+        if (this.balls.length === 0 && !this.finished) {
+            this.loseLife();
+        }
     }
 
     // ---- Sim ----------------------------------------------------------
 
-    private stepBall(dt: number) {
+    private stepBall(b: BallEntity, dt: number) {
         const SUBSTEPS = 4;
         const sub = dt / SUBSTEPS;
         for (let i = 0; i < SUBSTEPS; i++) {
-            if (this.stepBallOnce(sub)) break;
+            this.stepBallOnce(b, sub);
         }
     }
 
-    private stepBallOnce(dt: number): boolean {
-        const b = this.ballState;
+    private stepBallOnce(b: BallEntity, dt: number) {
         b.x += b.vx * dt;
         b.y += b.vy * dt;
 
-        if (b.x - BALL_RADIUS < 0) { b.x = BALL_RADIUS; b.vx = Math.abs(b.vx); sfx.wallHit(); this.squashBall('x', 0.6); }
-        if (b.x + BALL_RADIUS > ARENA_W) { b.x = ARENA_W - BALL_RADIUS; b.vx = -Math.abs(b.vx); sfx.wallHit(); this.squashBall('x', 0.6); }
-        if (b.y - BALL_RADIUS < 0) { b.y = BALL_RADIUS; b.vy = Math.abs(b.vy); sfx.wallHit(); this.squashBall('y', 0.6); }
+        if (b.x - BALL_RADIUS < 0) { b.x = BALL_RADIUS; b.vx = Math.abs(b.vx); sfx.wallHit(); this.squashBall(b, 'x', 0.6); }
+        if (b.x + BALL_RADIUS > ARENA_W) { b.x = ARENA_W - BALL_RADIUS; b.vx = -Math.abs(b.vx); sfx.wallHit(); this.squashBall(b, 'x', 0.6); }
+        if (b.y - BALL_RADIUS < 0) { b.y = BALL_RADIUS; b.vy = Math.abs(b.vy); sfx.wallHit(); this.squashBall(b, 'y', 0.6); }
 
-        // Ball drops below paddle = lose a life
-        if (b.y - BALL_RADIUS > ARENA_H) {
-            this.loseLife();
-            return true;
-        }
+        // Below paddle = ball dropped (handled by main update loop)
+        if (b.y - BALL_RADIUS > ARENA_H) return;
 
-        // Paddle
+        // Paddle collision
         const halfW = PADDLE_W / 2;
         const halfH = PADDLE_H / 2;
         const dx = b.x - this.paddle.x;
@@ -207,13 +237,12 @@ export class SoloScene extends Scene {
             b.y = PADDLE_Y_SOLO - halfH - BALL_RADIUS - 0.5;
             this.cameras.main.shake(80, 0.0015 + Math.abs(contact) * 0.003);
             sfx.paddleHit(Math.abs(contact));
-            this.squashBall('y');
-            // Save bonus: if ball was within 60px of falling, give it that "phew" feel
+            this.squashBall(b, 'y');
             const wasClose = (PADDLE_Y_SOLO - b.y) < 70;
             if (wasClose) this.freezeUntil = this.scene.systems.game.loop.time + 70;
         }
 
-        // Bricks
+        // Brick collisions
         for (const brick of this.bricks) {
             if (!brick.alive) continue;
             const bdx = b.x - brick.x;
@@ -232,34 +261,24 @@ export class SoloScene extends Scene {
                 b.vy = bdy > 0 ? Math.abs(b.vy) : -Math.abs(b.vy);
                 b.y += bdy > 0 ? overlapY : -overlapY;
             }
-            // Multi-hit handling: decrement HP, only destroy when 0
             brick.hp -= 1;
-            if (brick.hp > 0) {
-                this.damageBrick(brick);
-            } else {
-                this.killBrick(brick);
-            }
-            return false;
+            if (brick.hp > 0) this.damageBrick(brick);
+            else this.killBrick(brick);
+            return;
         }
-        return false;
     }
 
-    /** Iron brick took a hit but survived. Visual + audio cue. */
     private damageBrick(brick: Brick) {
         sfx.wallHit();
-        this.squashBall('y', 0.5);
-        // Color flips to "hurt" tint
+        if (this.balls[0]) this.squashBall(this.balls[0], 'y', 0.5);
         brick.sprite.setFillStyle(COLORS.ironBrickHurt, 0.92);
         brick.sprite.setStrokeStyle(1, COLORS.ironBrickHurt, 0.8);
-        // Shake the brick briefly
         const ox = brick.sprite.x;
         this.tweens.killTweensOf(brick.sprite);
         this.tweens.add({
             targets: brick.sprite,
             x: { from: ox - 2, to: ox + 2 },
-            duration: 40,
-            yoyo: true,
-            repeat: 1,
+            duration: 40, yoyo: true, repeat: 1,
             ease: 'Sine.easeInOut',
             onComplete: () => brick.sprite.setX(ox),
         });
@@ -273,28 +292,21 @@ export class SoloScene extends Scene {
         this.hudScore.setText(`${this.score}`);
         sfx.brickBreak();
         sfx.maybeCombo();
-        this.squashBall('y', 0.5);
-        // Hit-stop on milestones: last brick (great drama), big combo (rewards skill)
+        if (this.balls[0]) this.squashBall(this.balls[0], 'y', 0.5);
         if (this.aliveCount === 0) this.freezeUntil = this.time.now + 140;
         else if (result.tier >= 4) this.freezeUntil = this.time.now + 50;
 
-        // Visual: white flash, scale-down, particle burst
-        const x = brick.x;
-        const y = brick.y;
-        const color = brick.color;
+        // Visual destroy
+        const x = brick.x, y = brick.y, color = brick.color;
         const flash = this.add.image(x, y, this.particleKey).setScale(2.6).setTint(0xffffff).setAlpha(0.95);
         this.playLayer.add(flash);
         this.tweens.add({ targets: flash, alpha: 0, scale: 1, duration: 140, ease: 'Cubic.easeOut', onComplete: () => flash.destroy() });
-
         this.tweens.add({
             targets: brick.sprite,
-            scale: 0,
-            alpha: 0,
-            duration: 200,
-            ease: THEME.ease.in,
+            scale: 0, alpha: 0,
+            duration: 200, ease: THEME.ease.in,
             onComplete: () => brick.sprite.destroy(),
         });
-
         for (let i = 0; i < 6; i++) {
             const angle = (Math.PI * 2 * i) / 6 + Math.random() * 0.3;
             const dist = 26 + Math.random() * 14;
@@ -304,8 +316,7 @@ export class SoloScene extends Scene {
                 targets: p,
                 x: x + Math.cos(angle) * dist,
                 y: y + Math.sin(angle) * dist,
-                alpha: 0,
-                scale: 0.1,
+                alpha: 0, scale: 0.1,
                 duration: 380 + Math.random() * 80,
                 ease: THEME.ease.out,
                 onComplete: () => p.destroy(),
@@ -318,38 +329,144 @@ export class SoloScene extends Scene {
         if (newTier > this.speedTier) {
             this.speedTier = newTier;
             const target = Math.min(BALL_MAX_SPEED, BALL_INITIAL_SPEED * Math.pow(BALL_SPEED_INCREMENT_PER_HIT, newTier));
-            const cur = Math.hypot(this.ballState.vx, this.ballState.vy);
-            if (cur > 0) {
-                const k = target / cur;
-                this.ballState.vx *= k;
-                this.ballState.vy *= k;
+            for (const ball of this.balls) {
+                const cur = Math.hypot(ball.vx, ball.vy);
+                if (cur > 0) { const k = target / cur; ball.vx *= k; ball.vy *= k; }
             }
         }
+
+        // Power-up drop
+        const dropChance = brick.maxHp >= 2 ? IRON_POWERUP_DROP_CHANCE : POWERUP_DROP_CHANCE;
+        if (Math.random() < dropChance) this.spawnPowerUp(x, y, 'multi-ball');
 
         if (this.aliveCount === 0) this.win();
     }
 
-    private launchBall() {
-        const speed = BALL_INITIAL_SPEED;
-        const angle = (Math.random() - 0.5) * 0.6;
-        this.ballState.vx = Math.sin(angle) * speed;
-        this.ballState.vy = -Math.cos(angle) * speed;
-        this.ballState.onPaddle = false;
-        this.hudHint.setText('');
-        sfx.launch();
+    // ---- Balls --------------------------------------------------------
+
+    private spawnBall(onPaddle: boolean, x?: number, y?: number, vx?: number, vy?: number): BallEntity {
+        const sx = x ?? this.paddle?.x ?? ARENA_W / 2;
+        const sy = y ?? PADDLE_Y_SOLO - 30;
+        const glow = this.add.circle(sx, sy, BALL_RADIUS + 6, COLORS.ball, 0.18);
+        const sprite = this.add.circle(sx, sy, BALL_RADIUS, COLORS.ball, 1);
+        this.playLayer.add([glow, sprite]);
+        const b: BallEntity = { x: sx, y: sy, vx: vx ?? 0, vy: vy ?? 0, onPaddle, sprite, glow };
+        this.balls.push(b);
+        return b;
     }
+
+    private tryLaunchAll() {
+        let launched = false;
+        for (const b of this.balls) {
+            if (b.onPaddle) {
+                const angle = (Math.random() - 0.5) * 0.6;
+                const speed = BALL_INITIAL_SPEED;
+                b.vx = Math.sin(angle) * speed;
+                b.vy = -Math.cos(angle) * speed;
+                b.onPaddle = false;
+                launched = true;
+            }
+        }
+        if (launched) {
+            sfx.launch();
+            this.hudHint.setText('');
+        }
+    }
+
+    // ---- Power-ups ----------------------------------------------------
+
+    private spawnPowerUp(x: number, y: number, type: PowerUpType) {
+        const visual = POWERUP_VISUAL[type];
+        const container = this.add.container(x, y);
+        const bg = this.add.circle(0, 0, 18, visual.color, 0.16);
+        const ring = this.add.circle(0, 0, 18, visual.color, 0).setStrokeStyle(2, visual.color, 0.9);
+        const icon = this.add.text(0, 1, visual.emoji, {
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontSize: '22px',
+        }).setOrigin(0.5);
+        container.add([bg, ring, icon]);
+        this.playLayer.add(container);
+        // Bob/pulse
+        this.tweens.add({
+            targets: ring,
+            scaleX: 1.18, scaleY: 1.18,
+            duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+        });
+        this.powerUps.push({ type, x, y, container });
+    }
+
+    private removePowerUp(idx: number) {
+        const pu = this.powerUps[idx];
+        pu.container.destroy();
+        this.powerUps.splice(idx, 1);
+    }
+
+    private applyPowerUp(type: PowerUpType) {
+        sfx.playSample('combo', { volume: 0.5 });
+        this.flashPickupBanner(POWERUP_VISUAL[type].emoji + '  ' + POWERUP_VISUAL[type].label);
+        if (type === 'multi-ball') this.spawnExtraBalls();
+    }
+
+    private spawnExtraBalls() {
+        if (this.balls.length === 0) return;
+        // Use the first non-stuck ball as the source; if all stuck, launch all + spawn from ball[0] center
+        let source = this.balls.find((b) => !b.onPaddle) ?? this.balls[0];
+        if (source.onPaddle) {
+            this.tryLaunchAll();
+            source = this.balls[0];
+        }
+        const speed = Math.max(BALL_INITIAL_SPEED, Math.hypot(source.vx, source.vy));
+        const baseAngle = Math.atan2(source.vy, source.vx);
+        for (let i = 0; i < 2; i++) {
+            const offset = i === 0 ? -0.5 : 0.5;
+            const a = baseAngle + offset;
+            this.spawnBall(false, source.x, source.y, Math.cos(a) * speed, Math.sin(a) * speed);
+        }
+    }
+
+    private flashPickupBanner(text: string) {
+        const t = this.add.text(ARENA_W / 2, ARENA_H / 2 - 100, text, {
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontSize: '26px', fontStyle: '800',
+            color: '#ffd166',
+        }).setOrigin(0.5).setAlpha(0).setScale(0.7);
+        t.setLetterSpacing(3);
+        this.hudLayer.add(t);
+        this.tweens.add({ targets: t, alpha: 1, scale: 1.0, duration: 200, ease: 'Back.easeOut' });
+        this.tweens.add({
+            targets: t, alpha: 0, y: t.y - 24,
+            duration: 700, delay: 700, ease: 'Cubic.easeIn',
+            onComplete: () => t.destroy(),
+        });
+    }
+
+    // ---- Squash ------------------------------------------------------
+
+    private squashBall(b: BallEntity, axis: 'x' | 'y', intensity = 1) {
+        const compression = 0.55 + (1 - intensity) * 0.3;
+        const stretch = 1.45 - (1 - intensity) * 0.2;
+        const sx = axis === 'x' ? compression : stretch;
+        const sy = axis === 'y' ? compression : stretch;
+        this.tweens.killTweensOf([b.sprite, b.glow]);
+        this.tweens.add({
+            targets: [b.sprite, b.glow],
+            scaleX: sx, scaleY: sy,
+            duration: 55, yoyo: true, ease: 'Quint.easeOut',
+            onComplete: () => { b.sprite.setScale(1); b.glow.setScale(1); },
+        });
+    }
+
+    // ---- Game state --------------------------------------------------
 
     private loseLife() {
         this.lives -= 1;
         this.hudLives.setText('●'.repeat(this.lives) + '○'.repeat(STARTING_LIVES - this.lives));
         sfx.loseLife();
-        if (this.lives <= 0) {
-            this.lose();
-            return;
-        }
-        this.ballState.onPaddle = true;
-        this.ballState.vx = 0;
-        this.ballState.vy = 0;
+        if (this.lives <= 0) { this.lose(); return; }
+        // Drop all power-ups in flight (they'd be confusing on respawn)
+        while (this.powerUps.length > 0) this.removePowerUp(0);
+        // Respawn one ball stuck on paddle
+        this.spawnBall(true);
         this.cameras.main.flash(160, 30, 30, 30);
         this.hudHint.setText('👆 tap or SPACE to launch');
     }
@@ -364,7 +481,6 @@ export class SoloScene extends Scene {
 
     private lose() {
         this.finished = true;
-        this.ballState.onPaddle = true;
         this.cameras.main.flash(220, 240, 60, 60);
         sfx.lose();
         this.showResult('💔  THE WALL HELD.', `${this.score} POINTS · ${this.bricks.length - this.aliveCount} BRICKS BROKEN`);
@@ -373,36 +489,21 @@ export class SoloScene extends Scene {
     private showResult(headline: string, subline: string) {
         const dim = this.add.rectangle(ARENA_W / 2, ARENA_H / 2, ARENA_W, ARENA_H, 0x0a0a14, 0.55);
         this.hudLayer.add(dim);
-
-        const head = this.add
-            .text(ARENA_W / 2, ARENA_H / 2 - 36, headline, {
-                fontFamily: '"SF Pro Display", -apple-system, sans-serif',
-                fontSize: '40px',
-                fontStyle: '800',
-                color: '#e8e8f4',
-                align: 'center',
-            })
-            .setOrigin(0.5)
-            .setAlpha(0)
-            .setScale(1.18);
+        const head = this.add.text(ARENA_W / 2, ARENA_H / 2 - 36, headline, {
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontSize: '40px', fontStyle: '800', color: '#e8e8f4', align: 'center',
+        }).setOrigin(0.5).setAlpha(0).setScale(1.18);
         head.setLetterSpacing(4);
         this.hudLayer.add(head);
         this.tweens.add({ targets: head, alpha: 1, scale: 1, duration: 520, ease: 'Quint.easeOut' });
-
-        const sub = this.add
-            .text(ARENA_W / 2, ARENA_H / 2 + 14, subline, {
-                fontFamily: '"SF Pro Display", -apple-system, sans-serif',
-                fontSize: '14px',
-                color: '#9292b0',
-                align: 'center',
-            })
-            .setOrigin(0.5)
-            .setAlpha(0);
+        const sub = this.add.text(ARENA_W / 2, ARENA_H / 2 + 14, subline, {
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontSize: '14px', color: '#9292b0', align: 'center',
+        }).setOrigin(0.5).setAlpha(0);
         sub.setLetterSpacing(2);
         this.hudLayer.add(sub);
         this.tweens.add({ targets: sub, alpha: 1, duration: 480, delay: 180, ease: 'Cubic.easeOut' });
 
-        // Buttons (HTML overlay for accessibility / tap reliability)
         const overlay = document.getElementById('ui-overlay')!;
         const actions = document.createElement('div');
         actions.className = 'end-actions';
@@ -423,9 +524,7 @@ export class SoloScene extends Scene {
         this.events.once('shutdown', () => actions.remove());
     }
 
-    private exit() {
-        this.scene.start('LobbyScene');
-    }
+    private exit() { this.scene.start('LobbyScene'); }
 
     // ---- Builders -----------------------------------------------------
 
@@ -433,16 +532,12 @@ export class SoloScene extends Scene {
         const bg = this.add.rectangle(ARENA_W / 2, ARENA_H / 2, ARENA_W, ARENA_H, COLORS.arena);
         bg.setStrokeStyle(1, COLORS.arenaLine, 1);
         this.bgLayer.add(bg);
-
-        // Corner brackets
         const len = 18;
         const bracket = (cx: number, cy: number, sx: number, sy: number) => {
             const g = this.add.graphics();
             g.lineStyle(1, COLORS.arenaLine, 1);
             g.beginPath();
-            g.moveTo(cx + len * sx, cy);
-            g.lineTo(cx, cy);
-            g.lineTo(cx, cy + len * sy);
+            g.moveTo(cx + len * sx, cy); g.lineTo(cx, cy); g.lineTo(cx, cy + len * sy);
             g.strokePath();
             this.bgLayer.add(g);
         };
@@ -453,34 +548,24 @@ export class SoloScene extends Scene {
     }
 
     private buildHud() {
-        this.hudScore = this.add
-            .text(24, 24, '0', {
-                fontFamily: '"SF Pro Display", -apple-system, sans-serif',
-                fontSize: '24px',
-                color: '#e8e8f4',
-                fontStyle: '800',
-            })
-            .setOrigin(0, 0);
+        this.hudScore = this.add.text(24, 24, '0', {
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontSize: '24px', color: '#e8e8f4', fontStyle: '800',
+        }).setOrigin(0, 0);
         this.hudScore.setLetterSpacing(2);
         this.hudLayer.add(this.hudScore);
 
-        this.hudLives = this.add
-            .text(ARENA_W - 24, 24, '●●●', {
-                fontFamily: '"SF Pro Display", -apple-system, sans-serif',
-                fontSize: '20px',
-                color: `#${COLORS.p1.toString(16)}`,
-            })
-            .setOrigin(1, 0);
+        this.hudLives = this.add.text(ARENA_W - 24, 24, '●●●', {
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontSize: '20px', color: `#${COLORS.p1.toString(16)}`,
+        }).setOrigin(1, 0);
         this.hudLives.setLetterSpacing(4);
         this.hudLayer.add(this.hudLives);
 
-        this.hudHint = this.add
-            .text(ARENA_W / 2, ARENA_H - 28, 'Tap, drag, or arrow keys · SPACE to launch · ESC for lobby', {
-                fontFamily: '"SF Pro Display", -apple-system, sans-serif',
-                fontSize: '11px',
-                color: '#6c6c8a',
-            })
-            .setOrigin(0.5);
+        this.hudHint = this.add.text(ARENA_W / 2, ARENA_H - 28, 'Tap, drag, or arrow keys · SPACE to launch · ESC for lobby', {
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontSize: '11px', color: '#6c6c8a',
+        }).setOrigin(0.5);
         this.hudHint.setLetterSpacing(2);
         this.hudLayer.add(this.hudHint);
     }
@@ -497,8 +582,6 @@ export class SoloScene extends Scene {
     private buildBricks() {
         this.bricks = [];
         const yStart = 80;
-        // 2 iron rows in the middle of the wall (rows 3-4 of 8): visible challenge,
-        // not punishing on the front (player's first hits feel rewarding).
         const ironRows = new Set([3, 4]);
         for (let row = 0; row < SOLO_ROWS; row++) {
             const ratio = row / (SOLO_ROWS - 1);
@@ -516,44 +599,17 @@ export class SoloScene extends Scene {
         this.aliveCount = this.bricks.length;
     }
 
-    private buildPaddleAndBall() {
+    private buildPaddle() {
         this.paddle = this.add.rectangle(ARENA_W / 2, PADDLE_Y_SOLO, PADDLE_W, PADDLE_H, COLORS.p1, 0.96);
         this.paddle.setStrokeStyle(1, COLORS.p1, 0.4);
         this.playLayer.add(this.paddle);
-
-        this.ballGlow = this.add.circle(ARENA_W / 2, PADDLE_Y_SOLO - 30, BALL_RADIUS + 6, COLORS.ball, 0.18);
-        this.ball = this.add.circle(ARENA_W / 2, PADDLE_Y_SOLO - 30, BALL_RADIUS, COLORS.ball, 1);
-        this.playLayer.add([this.ballGlow, this.ball]);
-
-        this.ballState = { x: this.paddle.x, y: this.paddle.y - 30, vx: 0, vy: 0, onPaddle: true };
-        this.hudHint.setText('Tap or SPACE to launch');
+        this.hudHint.setText('👆 tap or SPACE to launch');
     }
 
     private handlePointer(pointer: Phaser.Input.Pointer) {
         const x = Math.max(PADDLE_W / 2, Math.min(ARENA_W - PADDLE_W / 2, pointer.worldX));
         this.paddle.x = x;
         this.kbPaddleX = x;
-    }
-
-    /** Brief squash-and-stretch on impact. axis = main impact direction. */
-    private squashBall(axis: 'x' | 'y', intensity = 1) {
-        const compression = 0.55 + (1 - intensity) * 0.3; // 0.55..0.85
-        const stretch = 1.45 - (1 - intensity) * 0.2;     // 1.45..1.25
-        const sx = axis === 'x' ? compression : stretch;
-        const sy = axis === 'y' ? compression : stretch;
-        this.tweens.killTweensOf([this.ball, this.ballGlow]);
-        this.tweens.add({
-            targets: [this.ball, this.ballGlow],
-            scaleX: sx,
-            scaleY: sy,
-            duration: 55,
-            yoyo: true,
-            ease: 'Quint.easeOut',
-            onComplete: () => {
-                this.ball.setScale(1);
-                this.ballGlow.setScale(1);
-            },
-        });
     }
 
     private cleanup() {
