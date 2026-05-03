@@ -1,0 +1,422 @@
+// Lobby scene. Transparent Phaser scene; the lobby UI lives as HTML in the
+// overlay div for accessibility (real input fields, copy buttons). Phaser
+// renders only a tasteful animated background — a slow drifting arena outline
+// — so the user sees something living the moment the page loads.
+
+import { Scene } from 'phaser';
+import {
+    ARENA_W,
+    ARENA_H,
+    COLORS,
+    PADDLE_W,
+    PADDLE_H,
+    PADDLE_Y,
+    BALL_RADIUS,
+} from '@breakout/shared';
+import { net, generateHandle } from '../../network/Net';
+import { THEME } from '../../ui/theme';
+
+interface LobbyData {
+    autoJoinRoomId?: string;
+}
+
+type LobbyMode = 'idle' | 'connecting' | 'waiting' | 'error';
+
+export class LobbyScene extends Scene {
+    private overlay!: HTMLElement;
+    private lobbyEl!: HTMLDivElement;
+    private mode: LobbyMode = 'idle';
+    private handle = generateHandle();
+
+    // Background graphics for ambient feel
+    private ambientPaddleTop!: Phaser.GameObjects.Rectangle;
+    private ambientPaddleBottom!: Phaser.GameObjects.Rectangle;
+    private ambientBall!: Phaser.GameObjects.Arc;
+    private ambientGroup!: Phaser.GameObjects.Container;
+
+    constructor() {
+        super({ key: 'LobbyScene' });
+    }
+
+    create(data: LobbyData) {
+        // Solid background (Phaser scale handles letterboxing of the arena box itself)
+        this.cameras.main.setBackgroundColor(`#${COLORS.bg.toString(16).padStart(6, '0')}`);
+
+        // Build ambient backdrop
+        this.buildAmbientBackdrop();
+
+        // Build HTML lobby UI in overlay
+        this.overlay = document.getElementById('ui-overlay')!;
+        this.lobbyEl = document.createElement('div');
+        this.lobbyEl.className = 'lobby';
+        this.overlay.appendChild(this.lobbyEl);
+
+        this.renderIdle();
+
+        // Fade-in next tick so CSS transition fires
+        requestAnimationFrame(() => this.lobbyEl.classList.add('is-visible'));
+
+        // Auto-join if landed via shared URL
+        if (data?.autoJoinRoomId) {
+            // Defer slightly so user sees a flash of context
+            this.time.delayedCall(180, () => this.handleJoinById(data.autoJoinRoomId!));
+        }
+
+        // Cleanup on shutdown
+        this.events.once('shutdown', () => this.cleanup());
+        this.events.once('destroy', () => this.cleanup());
+    }
+
+    // -- Ambient backdrop ------------------------------------------------
+
+    private buildAmbientBackdrop() {
+        const { width, height } = this.scale.gameSize;
+
+        this.ambientGroup = this.add.container(width / 2, height / 2);
+        this.ambientGroup.setAlpha(0.35);
+
+        // Subtle arena outline (a centered rounded rect drawn with Graphics)
+        const g = this.add.graphics();
+        g.lineStyle(1, COLORS.arenaLine, 1);
+        const w = ARENA_W * 0.86;
+        const h = ARENA_H * 0.86;
+        g.strokeRoundedRect(-w / 2, -h / 2, w, h, 18);
+
+        // Center divider line
+        g.lineStyle(1, COLORS.arenaLine, 0.6);
+        g.beginPath();
+        g.moveTo(-w / 2 + 36, 0);
+        g.lineTo(w / 2 - 36, 0);
+        g.strokePath();
+
+        this.ambientGroup.add(g);
+
+        // Ghost paddles & ball
+        this.ambientPaddleTop = this.add.rectangle(
+            0,
+            -h / 2 + (PADDLE_Y.p1 / ARENA_H) * h,
+            PADDLE_W,
+            PADDLE_H,
+            COLORS.p1,
+            0.55,
+        );
+        this.ambientPaddleBottom = this.add.rectangle(
+            0,
+            -h / 2 + (PADDLE_Y.p2 / ARENA_H) * h,
+            PADDLE_W,
+            PADDLE_H,
+            COLORS.p2,
+            0.55,
+        );
+        this.ambientBall = this.add.circle(0, 0, BALL_RADIUS, COLORS.ball, 0.85);
+        this.ambientGroup.add([this.ambientPaddleTop, this.ambientPaddleBottom, this.ambientBall]);
+
+        // Soft idle motion
+        this.tweens.add({
+            targets: [this.ambientPaddleTop, this.ambientPaddleBottom],
+            x: { from: -120, to: 120 },
+            duration: 4200,
+            yoyo: true,
+            repeat: -1,
+            ease: THEME.ease.sine,
+        });
+        this.tweens.add({
+            targets: this.ambientBall,
+            x: { from: -180, to: 180 },
+            y: { from: -h / 4, to: h / 4 },
+            duration: 5400,
+            yoyo: true,
+            repeat: -1,
+            ease: THEME.ease.sine,
+        });
+    }
+
+    // -- HTML rendering --------------------------------------------------
+
+    private renderIdle() {
+        this.mode = 'idle';
+        this.lobbyEl.innerHTML = '';
+
+        const title = document.createElement('h1');
+        title.className = 'lobby__title';
+        title.innerHTML = `BREAK<span class="accent">OUT</span>`;
+        this.lobbyEl.appendChild(title);
+
+        const sub = document.createElement('p');
+        sub.className = 'lobby__sub';
+        sub.textContent = '1v1  ·  Real-time  ·  No accounts';
+        this.lobbyEl.appendChild(sub);
+
+        const cards = document.createElement('div');
+        cards.className = 'lobby__cards';
+
+        // Quick match (primary)
+        const quick = document.createElement('button');
+        quick.className = 'card card--primary';
+        quick.innerHTML = `
+            <span class="card__label">Quick Match</span>
+            <span class="card__hint">Find an opponent now</span>
+        `;
+        quick.addEventListener('click', () => this.handleQuickMatch());
+        cards.appendChild(quick);
+
+        // Private room
+        const priv = document.createElement('button');
+        priv.className = 'card';
+        priv.innerHTML = `
+            <span class="card__label">Create Private Room</span>
+            <span class="card__hint">Get a link to share</span>
+        `;
+        priv.addEventListener('click', () => this.handleCreatePrivate());
+        cards.appendChild(priv);
+
+        // Join by code
+        const join = document.createElement('div');
+        join.className = 'card join';
+        const input = document.createElement('input');
+        input.className = 'join__input';
+        input.placeholder = 'Paste room code or URL';
+        input.spellcheck = false;
+        input.autocapitalize = 'characters';
+        const btn = document.createElement('button');
+        btn.className = 'join__btn';
+        btn.textContent = 'Join';
+        const submit = () => {
+            const id = this.extractRoomId(input.value);
+            if (id) this.handleJoinById(id);
+        };
+        btn.addEventListener('click', submit);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') submit();
+        });
+        join.appendChild(input);
+        join.appendChild(btn);
+        cards.appendChild(join);
+
+        this.lobbyEl.appendChild(cards);
+    }
+
+    private renderWaiting(opts: { shareUrl?: string; title?: string }) {
+        this.mode = 'waiting';
+        this.lobbyEl.innerHTML = '';
+
+        const title = document.createElement('h1');
+        title.className = 'lobby__title';
+        title.innerHTML = `BREAK<span class="accent">OUT</span>`;
+        this.lobbyEl.appendChild(title);
+
+        const status = document.createElement('div');
+        status.className = 'status';
+
+        const head = document.createElement('p');
+        head.className = 'status__title';
+        head.innerHTML = `${opts.title ?? 'Searching for opponent'}<span class="status__dots"><span></span><span></span><span></span></span>`;
+        status.appendChild(head);
+
+        if (opts.shareUrl) {
+            const share = document.createElement('button');
+            share.className = 'status__share';
+            share.innerHTML = `
+                <span class="status__share-url">${opts.shareUrl}</span>
+                <span class="status__share-hint">Tap to copy</span>
+            `;
+            share.addEventListener('click', () => this.handleCopy(share, opts.shareUrl!));
+            status.appendChild(share);
+        }
+
+        const cancel = document.createElement('button');
+        cancel.className = 'status__cancel';
+        cancel.textContent = 'Cancel';
+        cancel.addEventListener('click', () => this.handleCancel());
+        status.appendChild(cancel);
+
+        this.lobbyEl.appendChild(status);
+    }
+
+    private renderError(message: string) {
+        this.mode = 'error';
+        this.lobbyEl.innerHTML = '';
+
+        const title = document.createElement('h1');
+        title.className = 'lobby__title';
+        title.innerHTML = `BREAK<span class="accent">OUT</span>`;
+        this.lobbyEl.appendChild(title);
+
+        const status = document.createElement('div');
+        status.className = 'status';
+        const head = document.createElement('p');
+        head.className = 'status__title';
+        head.textContent = 'Something went sideways';
+        status.appendChild(head);
+
+        const err = document.createElement('p');
+        err.className = 'status__error';
+        err.textContent = message;
+        status.appendChild(err);
+
+        const cancel = document.createElement('button');
+        cancel.className = 'status__cancel';
+        cancel.textContent = 'Back';
+        cancel.addEventListener('click', () => this.renderIdle());
+        status.appendChild(cancel);
+
+        this.lobbyEl.appendChild(status);
+    }
+
+    // -- Handlers --------------------------------------------------------
+
+    private async handleQuickMatch() {
+        if (this.mode !== 'idle') return;
+        this.renderWaiting({ title: 'Searching for opponent' });
+        try {
+            const room = await net.quickMatch(this.handle);
+            this.waitForOpponentThenStart(room.state.phase === 'waiting');
+        } catch (err) {
+            this.renderError(this.errorMessage(err));
+        }
+    }
+
+    private async handleCreatePrivate() {
+        if (this.mode !== 'idle') return;
+        this.renderWaiting({ title: 'Hosting room' });
+        try {
+            const room = await net.createPrivate(this.handle);
+            const shareUrl = this.buildShareUrl(room.roomId);
+            this.renderWaiting({ title: 'Waiting for friend', shareUrl });
+            // Update browser URL so refresh keeps working
+            history.replaceState(null, '', `?room=${encodeURIComponent(room.roomId)}`);
+            this.waitForOpponentThenStart(true);
+        } catch (err) {
+            this.renderError(this.errorMessage(err));
+        }
+    }
+
+    private async handleJoinById(roomId: string) {
+        if (this.mode === 'connecting' || this.mode === 'waiting') return;
+        this.renderWaiting({ title: 'Joining room' });
+        try {
+            await net.joinById(roomId, this.handle);
+            // We just joined a room that already had a host. Server will move us to countdown.
+            this.waitForOpponentThenStart(false);
+        } catch (err) {
+            this.renderError(this.errorMessage(err));
+        }
+    }
+
+    private handleCancel() {
+        net.leave().finally(() => {
+            history.replaceState(null, '', window.location.pathname);
+            this.renderIdle();
+        });
+    }
+
+    private handleCopy(btn: HTMLElement, url: string) {
+        const hint = btn.querySelector('.status__share-hint') as HTMLElement | null;
+        const finish = () => {
+            if (!hint) return;
+            const original = 'Tap to copy';
+            hint.textContent = 'Copied';
+            hint.style.opacity = '1';
+            setTimeout(() => {
+                hint.textContent = original;
+            }, 1400);
+        };
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(url).then(finish, finish);
+        } else {
+            // Fallback
+            const ta = document.createElement('textarea');
+            ta.value = url;
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch { /* ignore */ }
+            ta.remove();
+            finish();
+        }
+    }
+
+    // -- Wait + handoff --------------------------------------------------
+
+    private waitForOpponentThenStart(_isHost: boolean) {
+        const room = net.room;
+        if (!room) {
+            this.renderError('Connection lost.');
+            return;
+        }
+
+        // Listen for state phase changes. When server sets phase to "countdown"
+        // (i.e. both players present), transition to GameScene.
+        const tryAdvance = () => {
+            if (!net.room) return;
+            const phase = net.room.state.phase;
+            if (phase === 'countdown' || phase === 'playing') {
+                this.transitionToGame();
+            }
+        };
+
+        // Hook listener
+        room.onStateChange((state) => {
+            if (state.phase === 'countdown' || state.phase === 'playing') {
+                this.transitionToGame();
+            }
+        });
+
+        // Server may have already advanced before our listener attached.
+        tryAdvance();
+
+        room.onLeave((code) => {
+            // Don't show error if we're already moving to game
+            if (this.mode === 'waiting') {
+                this.renderError(`Disconnected (${code}).`);
+            }
+        });
+
+        room.onError((_code, message) => {
+            this.renderError(message ?? 'Unknown room error.');
+        });
+    }
+
+    private transitionToGame() {
+        if (this.scene.isActive('GameScene')) return;
+
+        // Slide lobby out, then start GameScene
+        this.lobbyEl.classList.remove('is-visible');
+        this.tweens.add({
+            targets: this.ambientGroup,
+            alpha: 0,
+            y: this.scale.gameSize.height / 2 + 40,
+            duration: THEME.dur.long,
+            ease: THEME.ease.in,
+        });
+        this.time.delayedCall(THEME.dur.short, () => {
+            this.cleanup();
+            this.scene.start('GameScene');
+        });
+    }
+
+    // -- Helpers ---------------------------------------------------------
+
+    private buildShareUrl(roomId: string): string {
+        const base = `${window.location.origin}${window.location.pathname}`;
+        return `${base}?room=${encodeURIComponent(roomId)}`;
+    }
+
+    private extractRoomId(input: string): string | null {
+        const trimmed = input.trim();
+        if (!trimmed) return null;
+        // If it looks like a URL with ?room=, extract.
+        const match = trimmed.match(/[?&]room=([^&\s]+)/);
+        if (match) return decodeURIComponent(match[1]);
+        return trimmed;
+    }
+
+    private errorMessage(err: unknown): string {
+        if (err instanceof Error) return err.message;
+        if (typeof err === 'string') return err;
+        return 'Unable to reach server.';
+    }
+
+    private cleanup() {
+        if (this.lobbyEl?.parentNode) this.lobbyEl.parentNode.removeChild(this.lobbyEl);
+    }
+}

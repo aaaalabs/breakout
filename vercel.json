@@ -1,0 +1,6 @@
+{
+  "buildCommand": "npm run build:shared && npm run build:client",
+  "outputDirectory": "client/dist",
+  "framework": null,
+  "installCommand": "npm install"
+}
