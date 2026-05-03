@@ -14,7 +14,26 @@ app.get('/health', (_req, res) => {
     res.json({ ok: true, ts: Date.now() });
 });
 
-app.use('/colyseus', monitor());
+// Admin monitor — gated. In production set MONITOR_TOKEN to enable.
+if (process.env.MONITOR_TOKEN) {
+    app.use('/colyseus', (req, res, next) => {
+        const auth = req.headers.authorization;
+        if (auth === `Bearer ${process.env.MONITOR_TOKEN}`) return next();
+        res.status(401).send('unauthorized');
+    }, monitor());
+}
+
+// CORS — restrict origins in production
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ||
+    'https://breakout.leodin.com,https://breakout-seven.vercel.app').split(',');
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+    }
+    next();
+});
 
 const httpServer = createServer(app);
 

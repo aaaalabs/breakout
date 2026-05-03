@@ -5,12 +5,10 @@
 
 import { Scene } from 'phaser';
 import {
-    ARENA_W,
     ARENA_H,
     COLORS,
     PADDLE_W,
     PADDLE_H,
-    PADDLE_Y,
     BALL_RADIUS,
 } from '@breakout/shared';
 import { net, generateHandle } from '../../network/Net';
@@ -73,49 +71,31 @@ export class LobbyScene extends Scene {
         const { width, height } = this.scale.gameSize;
 
         this.ambientGroup = this.add.container(width / 2, height / 2);
-        this.ambientGroup.setAlpha(0.35);
+        this.ambientGroup.setAlpha(0.28);
 
-        // Subtle arena outline (a centered rounded rect drawn with Graphics)
-        const g = this.add.graphics();
-        g.lineStyle(1, COLORS.arenaLine, 1);
-        const w = ARENA_W * 0.86;
+        // No arena outline — it visually competed with the lobby card column,
+        // making the layout feel "shifted." Keep ambient motion only.
         const h = ARENA_H * 0.86;
-        g.strokeRoundedRect(-w / 2, -h / 2, w, h, 18);
 
-        // Center divider line
-        g.lineStyle(1, COLORS.arenaLine, 0.6);
-        g.beginPath();
-        g.moveTo(-w / 2 + 36, 0);
-        g.lineTo(w / 2 - 36, 0);
-        g.strokePath();
-
-        this.ambientGroup.add(g);
-
-        // Ghost paddles & ball
-        this.ambientPaddleTop = this.add.rectangle(
-            0,
-            -h / 2 + (PADDLE_Y.p1 / ARENA_H) * h,
-            PADDLE_W,
-            PADDLE_H,
-            COLORS.p1,
-            0.55,
-        );
-        this.ambientPaddleBottom = this.add.rectangle(
-            0,
-            -h / 2 + (PADDLE_Y.p2 / ARENA_H) * h,
-            PADDLE_W,
-            PADDLE_H,
-            COLORS.p2,
-            0.55,
-        );
+        this.ambientPaddleTop = this.add.rectangle(0, -h / 2 + 24, PADDLE_W, PADDLE_H, COLORS.p1, 0.55);
+        this.ambientPaddleBottom = this.add.rectangle(0, h / 2 - 24, PADDLE_W, PADDLE_H, COLORS.p2, 0.55);
         this.ambientBall = this.add.circle(0, 0, BALL_RADIUS, COLORS.ball, 0.85);
         this.ambientGroup.add([this.ambientPaddleTop, this.ambientPaddleBottom, this.ambientBall]);
 
-        // Soft idle motion
+        // Counter-motion paddles for visual rhythm (per UX review P2)
         this.tweens.add({
-            targets: [this.ambientPaddleTop, this.ambientPaddleBottom],
+            targets: this.ambientPaddleTop,
             x: { from: -120, to: 120 },
             duration: 4200,
+            yoyo: true,
+            repeat: -1,
+            ease: THEME.ease.sine,
+        });
+        this.tweens.add({
+            targets: this.ambientPaddleBottom,
+            x: { from: 120, to: -120 },
+            duration: 5100,
+            delay: 400,
             yoyo: true,
             repeat: -1,
             ease: THEME.ease.sine,
@@ -159,6 +139,16 @@ export class LobbyScene extends Scene {
         `;
         quick.addEventListener('click', () => this.handleQuickMatch());
         cards.appendChild(quick);
+
+        // Solo practice (no opponent needed)
+        const solo = document.createElement('button');
+        solo.className = 'card';
+        solo.innerHTML = `
+            <span class="card__label">Solo Practice</span>
+            <span class="card__hint">Classic single-player</span>
+        `;
+        solo.addEventListener('click', () => this.handleSolo());
+        cards.appendChild(solo);
 
         // Private room
         const priv = document.createElement('button');
@@ -265,6 +255,12 @@ export class LobbyScene extends Scene {
 
     // -- Handlers --------------------------------------------------------
 
+    private handleSolo() {
+        if (this.mode !== 'idle') return;
+        this.lobbyEl.classList.remove('is-visible');
+        this.time.delayedCall(220, () => this.scene.start('SoloScene'));
+    }
+
     private async handleQuickMatch() {
         if (this.mode !== 'idle') return;
         this.renderWaiting({ title: 'Searching for opponent' });
@@ -365,7 +361,8 @@ export class LobbyScene extends Scene {
         tryAdvance();
 
         room.onLeave((code) => {
-            // Don't show error if we're already moving to game
+            // 1000 = normal close (user clicked cancel / nav); not an error
+            if (code === 1000) return;
             if (this.mode === 'waiting') {
                 this.renderError(`Disconnected (${code}).`);
             }

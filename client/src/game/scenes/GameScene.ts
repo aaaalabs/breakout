@@ -64,6 +64,10 @@ export class GameScene extends Scene {
     private lastSendAt = 0;
     private lastSentX = -1;
     private trailFlashUntil = 0;
+    private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
+    private keyA?: Phaser.Input.Keyboard.Key;
+    private keyD?: Phaser.Input.Keyboard.Key;
+    private kbPaddleX: number | null = null;
     private renderedPhase: string | null = null;
 
     constructor() {
@@ -107,9 +111,16 @@ export class GameScene extends Scene {
             ease: THEME.ease.out,
         });
 
-        // Wire input — send pointer X (in game-world coords) to server, throttled.
+        // Wire input: pointer (mouse + touch) → paddle X
         this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => this.handlePointerMove(pointer));
         this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => this.handlePointerMove(pointer));
+
+        // Keyboard control: arrow keys + A/D (held) move paddle left/right
+        if (this.input.keyboard) {
+            this.cursors = this.input.keyboard.createCursorKeys();
+            this.keyA = this.input.keyboard.addKey('A');
+            this.keyD = this.input.keyboard.addKey('D');
+        }
 
         // Wire room messages
         room.onMessage<BrickBreakEvent>('brickBreak', (ev) => this.handleBrickBreak(ev));
@@ -127,17 +138,26 @@ export class GameScene extends Scene {
             if (key === room.sessionId) this.mySlot = value as PlayerSlot;
         });
 
-        // Brick state changes (per-brick alive flag flips to 0)
-        $(room.state).bricksP1.onChange((brick: Brick, idx: number) =>
-            this.handleBrickChange('p1', idx, brick.alive),
-        );
-        $(room.state).bricksP2.onChange((brick: Brick, idx: number) =>
-            this.handleBrickChange('p2', idx, brick.alive),
-        );
-
-        // Brick adds (rematch / regenerate). Rebuild visuals fresh.
-        $(room.state).bricksP1.onAdd(() => this.rebuildBricks());
-        $(room.state).bricksP2.onAdd(() => this.rebuildBricks());
+        // Brick state changes — Colyseus 0.16: ArraySchema.onChange does NOT fire
+        // when a field of an existing element mutates. Subscribe per element.
+        const subscribeBrickP1 = (brick: Brick, idx: number) => {
+            $(brick).onChange(() => this.handleBrickChange('p1', idx, brick.alive));
+        };
+        const subscribeBrickP2 = (brick: Brick, idx: number) => {
+            $(brick).onChange(() => this.handleBrickChange('p2', idx, brick.alive));
+        };
+        $(room.state).bricksP1.onAdd((brick: Brick, idx: number) => {
+            subscribeBrickP1(brick, idx);
+            // If we're seeing this onAdd after initial state (e.g. rematch), rebuild visuals
+            if (this.bricksP1.length > 0 && this.bricksP1[idx] == null) this.rebuildBricks();
+        });
+        $(room.state).bricksP2.onAdd((brick: Brick, idx: number) => {
+            subscribeBrickP2(brick, idx);
+            if (this.bricksP2.length > 0 && this.bricksP2[idx] == null) this.rebuildBricks();
+        });
+        // Subscribe to existing bricks (state already populated when scene starts)
+        room.state.bricksP1.forEach((b, i) => subscribeBrickP1(b, i));
+        room.state.bricksP2.forEach((b, i) => subscribeBrickP2(b, i));
 
         // Phase changes — switch to EndScene when finished
         room.onStateChange((state) => {
@@ -204,8 +224,28 @@ export class GameScene extends Scene {
         // Phase-driven center text
         this.renderCenterByPhase(state.phase, state.countdownEndsAt);
 
-        // Send pointer X if changed and throttle elapsed
+        // Keyboard movement (held cursor / WASD): integrate at constant speed
+        this.handleKeyboardMovement(this.game.loop.delta);
+
+        // Send pointer/keyboard X if changed and throttle elapsed
         this.maybeSendPaddleX(time);
+    }
+
+    private handleKeyboardMovement(deltaMs: number) {
+        const left = this.cursors?.left.isDown || this.keyA?.isDown;
+        const right = this.cursors?.right.isDown || this.keyD?.isDown;
+        if (!left && !right) return;
+
+        const speed = 980; // px/s — snappy but not twitchy
+        const myPaddle = this.mySlot === 'p1' ? this.paddleP1 : this.mySlot === 'p2' ? this.paddleP2 : null;
+        if (!myPaddle) return;
+
+        const cur = this.kbPaddleX ?? myPaddle.x;
+        const dir = (right ? 1 : 0) - (left ? 1 : 0);
+        const next = Phaser.Math.Clamp(cur + dir * speed * (deltaMs / 1000), 0, ARENA_W);
+        this.kbPaddleX = next;
+        myPaddle.x = next;
+        (this as { _pendingX?: number })._pendingX = next;
     }
 
     // ------------------------------------------------------------------
@@ -364,11 +404,14 @@ export class GameScene extends Scene {
     // ------------------------------------------------------------------
 
     private handlePointerMove(pointer: Phaser.Input.Pointer) {
-        // pointer.worldX is in scaled coords → use Phaser's translation
+        // pointer.worldX is in scaled coords → use Phaser's translation.
+        // Works for mouse, touch (drag), and tap (pointerdown).
         const x = Phaser.Math.Clamp(pointer.worldX, 0, ARENA_W);
         // We update local paddle prediction immediately (instant feedback).
         if (this.mySlot === 'p1') this.paddleP1.x = x;
         else if (this.mySlot === 'p2') this.paddleP2.x = x;
+        // Pointer overrides keyboard tracking
+        this.kbPaddleX = x;
         // Send is throttled in update()
         (this as { _pendingX?: number })._pendingX = x;
     }

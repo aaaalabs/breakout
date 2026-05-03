@@ -5,6 +5,7 @@ import { ARENA_W, ARENA_H, COLORS } from '@breakout/shared';
 import { BootScene } from './scenes/BootScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { GameScene } from './scenes/GameScene';
+import { SoloScene } from './scenes/SoloScene';
 import { EndScene } from './scenes/EndScene';
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -24,7 +25,7 @@ const config: Phaser.Types.Core.GameConfig = {
         pixelArt: false,
         roundPixels: false,
     },
-    scene: [BootScene, LobbyScene, GameScene, EndScene],
+    scene: [BootScene, LobbyScene, GameScene, SoloScene, EndScene],
 };
 
 const StartGame = (parent: string) => new Game({ ...config, parent });

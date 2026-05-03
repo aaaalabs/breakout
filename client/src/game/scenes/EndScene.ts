@@ -2,7 +2,7 @@
 // in the winner's color, stats line, two action buttons (HTML for click/tap reliability).
 
 import { Scene } from 'phaser';
-import { ARENA_W, ARENA_H, COLORS } from '@breakout/shared';
+import { ARENA_W, ARENA_H, BRICK_COLS, BRICK_ROWS_PER_PLAYER, COLORS } from '@breakout/shared';
 import type { PlayerSlot } from '@breakout/shared';
 import { net } from '../../network/Net';
 import { THEME } from '../../ui/theme';
@@ -112,9 +112,8 @@ export class EndScene extends Scene {
     }
 
     private buildStatsLine(data: EndData): string {
-        // The server doesn't currently expose total bricks broken — derive what
-        // we can from the alive counts vs. starting count (48 per player).
-        const START = 48;
+        // Derive bricks-broken from start-vs-remaining counts.
+        const START = BRICK_COLS * BRICK_ROWS_PER_PLAYER;
         const brokenByP1 = START - data.aliveCountP2; // p1 broke p2's bricks
         const brokenByP2 = START - data.aliveCountP1;
         const myBroke = data.mySlot === 'p1' ? brokenByP1 : data.mySlot === 'p2' ? brokenByP2 : 0;
@@ -125,6 +124,8 @@ export class EndScene extends Scene {
     }
 
     // ----------------------------------------------------------------
+
+    private rematchUnsubscribe?: () => void;
 
     private handleRematch(btn: HTMLButtonElement) {
         const room = net.room;
@@ -139,14 +140,16 @@ export class EndScene extends Scene {
         } catch {
             /* ignore */
         }
-        // When server transitions back to countdown/playing, GameScene's
-        // onStateChange will already be active; we just remove this overlay
-        // so the dimmed arena returns to full alpha.
-        room.onStateChange((state) => {
+        // Single subscription; tear down on shutdown to prevent leaks across rematches.
+        this.rematchUnsubscribe?.();
+        const handler = (state: { phase: string }) => {
             if (state.phase === 'countdown' || state.phase === 'playing') {
+                this.rematchUnsubscribe?.();
                 this.restoreAndExit();
             }
-        });
+        };
+        room.onStateChange(handler);
+        this.rematchUnsubscribe = () => room.onStateChange.remove(handler);
     }
 
     private restoreAndExit() {
