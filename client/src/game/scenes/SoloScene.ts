@@ -489,7 +489,7 @@ export class SoloScene extends Scene {
         const bg = this.add.circle(0, 0, 18, visual.color, 0.16);
         const ring = this.add.circle(0, 0, 18, visual.color, 0).setStrokeStyle(2, visual.color, 0.9);
         const icon = this.add.text(0, 1, visual.emoji, {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontSize: '22px',
         }).setOrigin(0.5);
         container.add([bg, ring, icon]);
@@ -598,12 +598,12 @@ export class SoloScene extends Scene {
         const container = this.add.container(x, yBase);
         const bg = this.add.rectangle(0, 0, 64, 28, 0x13131f, 0.85).setStrokeStyle(1, visual.color, 0.6);
         const icon = this.add.text(-18, 1, visual.emoji, {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontSize: '14px',
         }).setOrigin(0.5);
         const bar = this.add.rectangle(-30, 11, 60, 2, visual.color, 0.85).setOrigin(0, 0.5);
         const label = this.add.text(8, 1, type === 'long-paddle' ? 'LONG' : 'SLOW', {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontSize: '9px', color: `#${visual.color.toString(16).padStart(6, '0')}`,
             fontStyle: '700',
         }).setOrigin(0.5);
@@ -646,7 +646,7 @@ export class SoloScene extends Scene {
 
     private flashPickupBanner(text: string) {
         const t = this.add.text(ARENA_W / 2, ARENA_H / 2 - 100, text, {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontSize: '26px', fontStyle: '800',
             color: '#ffd166',
         }).setOrigin(0.5).setAlpha(0).setScale(0.7);
@@ -710,14 +710,14 @@ export class SoloScene extends Scene {
         const dim = this.add.rectangle(ARENA_W / 2, ARENA_H / 2, ARENA_W, ARENA_H, 0x0a0a14, 0.55);
         this.hudLayer.add(dim);
         const head = this.add.text(ARENA_W / 2, ARENA_H / 2 - 36, headline, {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontSize: '40px', fontStyle: '800', color: '#e8e8f4', align: 'center',
         }).setOrigin(0.5).setAlpha(0).setScale(1.18);
         head.setLetterSpacing(4);
         this.hudLayer.add(head);
         this.tweens.add({ targets: head, alpha: 1, scale: 1, duration: 520, ease: 'Quint.easeOut' });
         const sub = this.add.text(ARENA_W / 2, ARENA_H / 2 + 14, subline, {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontSize: '14px', color: '#9292b0', align: 'center',
         }).setOrigin(0.5).setAlpha(0);
         sub.setLetterSpacing(2);
@@ -769,21 +769,21 @@ export class SoloScene extends Scene {
 
     private buildHud() {
         this.hudScore = this.add.text(24, 24, '0', {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontSize: '24px', color: '#e8e8f4', fontStyle: '800',
         }).setOrigin(0, 0);
         this.hudScore.setLetterSpacing(2);
         this.hudLayer.add(this.hudScore);
 
         this.hudLives = this.add.text(ARENA_W - 24, 24, '●●●', {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontSize: '20px', color: `#${COLORS.p1.toString(16)}`,
         }).setOrigin(1, 0);
         this.hudLives.setLetterSpacing(4);
         this.hudLayer.add(this.hudLives);
 
         this.hudHint = this.add.text(ARENA_W / 2, ARENA_H - 28, 'Tap, drag, or arrow keys · SPACE to launch · ESC for lobby', {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontSize: '11px', color: '#6c6c8a',
         }).setOrigin(0.5);
         this.hudHint.setLetterSpacing(2);
@@ -844,7 +844,7 @@ export class SoloScene extends Scene {
                 let iconText: Phaser.GameObjects.Text | undefined;
                 if (visual.emoji) {
                     iconText = this.add.text(x, y, visual.emoji, {
-                        fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+                        fontFamily: THEME.fontFamilyEmoji,
                         fontSize: '14px',
                     }).setOrigin(0.5);
                     this.brickLayer.add(iconText);

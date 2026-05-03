@@ -35,7 +35,7 @@ export class ComboMeter {
         this.scene = scene;
         this.layer = opts.layer ?? null;
         this.text = scene.add.text(opts.x, opts.y, '', {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontStyle: '800',
             fontSize: '28px',
             color: '#e8e8f4',

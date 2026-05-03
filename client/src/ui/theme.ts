@@ -24,6 +24,10 @@ export const THEME = {
     },
 
     fontFamily: '-apple-system, "SF Pro Display", "Helvetica Neue", "Segoe UI", sans-serif',
+    // Emoji-aware font chain — Phaser's canvas renderer falls back through this
+    // list per-codepoint, so the regular font handles Latin and the emoji fonts
+    // handle 💎/💣/🎁/🏆/💔 etc. without showing □ replacement boxes.
+    fontFamilyEmoji: '-apple-system, "SF Pro Display", "Helvetica Neue", "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif',
 
     // Easing helpers (Phaser tween-friendly strings)
     ease: {

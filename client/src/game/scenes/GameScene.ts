@@ -478,7 +478,7 @@ export class GameScene extends Scene {
         const emoji = this.brickEmoji(kind);
         if (!emoji) return null;
         const t = this.add.text(x, y, emoji, {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontSize: '14px',
         }).setOrigin(0.5);
         this.brickLayer.add(t);
@@ -609,7 +609,7 @@ export class GameScene extends Scene {
 
     private flashGarbageBanner(text: string) {
         const t = this.add.text(ARENA_W / 2, ARENA_H / 2, text, {
-            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            fontFamily: THEME.fontFamilyEmoji,
             fontSize: '24px', fontStyle: '800',
             color: '#ffd166',
         }).setOrigin(0.5).setAlpha(0).setScale(0.7);
