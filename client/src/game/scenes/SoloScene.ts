@@ -35,13 +35,25 @@ const POWERUP_DROP_CHANCE = 0.10;        // base chance per non-iron brick
 const IRON_POWERUP_DROP_CHANCE = 0.30;   // higher chance for iron (risk → reward)
 const POWERUP_FALL_SPEED = 220;          // px/s
 
+type BrickKind = 'normal' | 'iron' | 'gift' | 'diamond' | 'bomb';
+
 interface Brick {
     x: number; y: number;
     alive: boolean;
     sprite: Phaser.GameObjects.Rectangle;
+    iconText?: Phaser.GameObjects.Text;  // emoji hint for special bricks
     color: number;
     hp: number; maxHp: number;
+    kind: BrickKind;
 }
+
+const BRICK_KIND_VISUAL: Record<BrickKind, { emoji?: string; color?: number; halo?: number }> = {
+    normal:  {},
+    iron:    {},
+    gift:    { emoji: '🎁', halo: 0xffd166 },
+    diamond: { emoji: '💎', halo: 0x9d8df1 },
+    bomb:    { emoji: '💣', halo: 0xff6b6b },
+};
 
 interface BallEntity {
     x: number; y: number; vx: number; vy: number;
@@ -316,9 +328,59 @@ export class SoloScene extends Scene {
         });
     }
 
+    /** Apply the effect of a special brick after it is destroyed. */
+    private applyBrickEffect(brick: Brick) {
+        if (brick.kind === 'gift') {
+            const type = POWERUP_POOL[Math.floor(Math.random() * POWERUP_POOL.length)];
+            this.spawnPowerUp(brick.x, brick.y, type);
+            sfx.applause(0.5);
+            this.flashPickupBanner('🎁  GIFT');
+            this.bgfx.pulse(0xffd166, 0.22);
+        } else if (brick.kind === 'diamond') {
+            this.score += 50;
+            this.hudScore.setText(`${this.score}`);
+            sfx.applause(0.45);
+            this.flashPickupBanner('💎  +50');
+            this.bgfx.pulse(0x9d8df1, 0.20);
+            for (let i = 0; i < 12; i++) {
+                const angle = (Math.PI * 2 * i) / 12 + Math.random() * 0.3;
+                const dist = 40 + Math.random() * 24;
+                const p = this.add.image(brick.x, brick.y, this.particleKey).setTint(0x9d8df1).setScale(1.0 + Math.random() * 0.5);
+                this.playLayer.add(p);
+                this.tweens.add({
+                    targets: p,
+                    x: brick.x + Math.cos(angle) * dist,
+                    y: brick.y + Math.sin(angle) * dist,
+                    alpha: 0, scale: 0.1,
+                    duration: 600 + Math.random() * 200,
+                    ease: THEME.ease.out,
+                    onComplete: () => p.destroy(),
+                });
+            }
+        } else if (brick.kind === 'bomb') {
+            sfx.fail(0.5);
+            this.flashPickupBanner('💣  BOOM');
+            this.cameras.main.shake(180, 0.012);
+            this.bgfx.pulse(0xff6b6b, 0.32);
+            const RADIUS = 90;
+            for (const other of this.bricks) {
+                if (!other.alive || other === brick) continue;
+                const d = Math.hypot(other.x - brick.x, other.y - brick.y);
+                if (d <= RADIUS) {
+                    other.hp = 0;
+                    this.killBrick(other);
+                }
+            }
+        }
+    }
+
     private killBrick(brick: Brick) {
         brick.alive = false;
         this.aliveCount--;
+        // Destroy icon text if any
+        brick.iconText?.destroy();
+        brick.iconText = undefined;
+
         const result = this.combo.register(this.time.now);
         this.score += 10 + result.bonus;
         this.hudScore.setText(`${this.score}`);
@@ -330,10 +392,13 @@ export class SoloScene extends Scene {
             this.bgfx.pulse(COLORS.p1, 0.30);
         } else if (result.tier >= 4) {
             this.freezeUntil = this.time.now + 50;
-            // Tier color matches combo meter
             const tierColor = result.tier >= 6 ? COLORS.p2 : result.tier >= 5 ? 0xffd166 : 0x7ce38b;
             this.bgfx.pulse(tierColor, 0.16);
+            if (result.tier >= 5) sfx.applause(0.35);
         }
+
+        // Apply special-brick effect AFTER core kill
+        this.applyBrickEffect(brick);
 
         // Visual destroy
         const x = brick.x, y = brick.y, color = brick.color;
@@ -374,9 +439,9 @@ export class SoloScene extends Scene {
             }
         }
 
-        // Power-up drop — pick weighted random type from pool
+        // Random power-up drop (separate from special-brick effects)
         const dropChance = brick.maxHp >= 2 ? IRON_POWERUP_DROP_CHANCE : POWERUP_DROP_CHANCE;
-        if (Math.random() < dropChance) {
+        if (brick.kind === 'normal' && Math.random() < dropChance) {
             const type = POWERUP_POOL[Math.floor(Math.random() * POWERUP_POOL.length)];
             this.spawnPowerUp(x, y, type);
         }
@@ -735,17 +800,72 @@ export class SoloScene extends Scene {
         this.bricks = [];
         const yStart = 80;
         const ironRows = new Set([3, 4]);
+
+        // Pre-pick ~6 random non-iron positions to be special bricks.
+        // Distribution: 40% gift, 35% diamond, 25% bomb. Visible emoji telegraphs effect.
+        const totalCells = SOLO_ROWS * BRICK_COLS;
+        const specialIndexes = new Set<number>();
+        const specialKinds: Map<number, BrickKind> = new Map();
+        while (specialIndexes.size < 7) {
+            const idx = Math.floor(Math.random() * totalCells);
+            const row = Math.floor(idx / BRICK_COLS);
+            if (ironRows.has(row)) continue;       // iron + special = confused, skip
+            if (specialIndexes.has(idx)) continue;
+            specialIndexes.add(idx);
+            const r = Math.random();
+            specialKinds.set(idx, r < 0.40 ? 'gift' : r < 0.75 ? 'diamond' : 'bomb');
+        }
+
+        let cellIdx = 0;
         for (let row = 0; row < SOLO_ROWS; row++) {
             const ratio = row / (SOLO_ROWS - 1);
             const isIron = ironRows.has(row);
-            const color = isIron ? COLORS.ironBrick : (ratio < 0.5 ? COLORS.p1Brick : COLORS.p2Brick);
-            for (let col = 0; col < BRICK_COLS; col++) {
+            for (let col = 0; col < BRICK_COLS; col++, cellIdx++) {
                 const x = BRICK_GAP + col * (BRICK_W + BRICK_GAP) + BRICK_W / 2;
                 const y = yStart + row * (BRICK_H + BRICK_GAP) + BRICK_H / 2;
+
+                let kind: BrickKind = 'normal';
+                if (isIron) kind = 'iron';
+                else if (specialKinds.has(cellIdx)) kind = specialKinds.get(cellIdx)!;
+
+                const visual = BRICK_KIND_VISUAL[kind];
+                const isSpecial = !!visual.emoji;
+                const color = isIron ? COLORS.ironBrick
+                    : isSpecial ? (visual.halo ?? COLORS.p1Brick)
+                    : (ratio < 0.5 ? COLORS.p1Brick : COLORS.p2Brick);
+
                 const sprite = this.add.rectangle(x, y, BRICK_W, BRICK_H, color, 0.92);
                 sprite.setStrokeStyle(1, color, 0.6);
                 this.brickLayer.add(sprite);
-                this.bricks.push({ x, y, alive: true, sprite, color, hp: isIron ? 2 : 1, maxHp: isIron ? 2 : 1 });
+
+                let iconText: Phaser.GameObjects.Text | undefined;
+                if (visual.emoji) {
+                    iconText = this.add.text(x, y, visual.emoji, {
+                        fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+                        fontSize: '14px',
+                    }).setOrigin(0.5);
+                    this.brickLayer.add(iconText);
+                    // Subtle pulse so the special bricks call attention to themselves
+                    this.tweens.add({
+                        targets: iconText,
+                        scale: { from: 0.92, to: 1.10 },
+                        duration: 1200,
+                        yoyo: true,
+                        repeat: -1,
+                        ease: 'Sine.easeInOut',
+                    });
+                }
+
+                this.bricks.push({
+                    x, y,
+                    alive: true,
+                    sprite,
+                    iconText,
+                    color,
+                    hp: isIron ? 2 : 1,
+                    maxHp: isIron ? 2 : 1,
+                    kind,
+                });
             }
         }
         this.aliveCount = this.bricks.length;

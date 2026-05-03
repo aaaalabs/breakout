@@ -13,6 +13,10 @@ const SAMPLE_URLS = {
     'match-start': '/audio/match-start.mp3',
     'win': '/audio/win.mp3',
     'combo': '/audio/combo.mp3',
+    'applause': '/audio/applause.mp3',
+    'buzzer': '/audio/buzzer.mp3',
+    'fail': '/audio/fail.mp3',
+    'drumroll': '/audio/drumroll.mp3',
 } as const;
 export type SampleKey = keyof typeof SAMPLE_URLS;
 
@@ -186,6 +190,18 @@ class SfxEngine {
     matchStart() {
         this.playSample('match-start', { volume: 0.55 });
     }
+
+    /** Cheer / applause — for big moments (high combo, win, dominant play). */
+    applause(volume = 0.5) { this.playSample('applause', { volume }); }
+
+    /** Buzzer — negative event (curse cast on you, missed last brick, foul). */
+    buzzer(volume = 0.55) { this.playSample('buzzer', { volume }); }
+
+    /** Fail / fall — ball lost / scored against. */
+    fail(volume = 0.55) { this.playSample('fail', { volume }); }
+
+    /** Drumroll — tension build (countdown, garbage incoming, big serve). */
+    drumroll(volume = 0.45) { this.playSample('drumroll', { volume }); }
 
     /** Defeat sting — short descending. */
     lose() {
