@@ -1,6 +1,7 @@
 import { Room, Client } from 'colyseus';
 import {
     GameState,
+    ARENA_W,
     PADDLE_W,
     PADDLE_H,
     PADDLE_Y,
@@ -26,6 +27,7 @@ export class BreakoutRoom extends Room<GameState> {
     private lastTickAt = 0;
     private privateRoom = false;
     private rematchVotes = new Set<string>();
+    private pendingLaunch: { dir: PlayerSlot; at: number } | null = null;
 
     onCreate(options: JoinOptions = {}) {
         this.privateRoom = !!options.private;
@@ -144,6 +146,18 @@ export class BreakoutRoom extends Room<GameState> {
         const dt = Math.min(0.05, (now - this.lastTickAt) / 1000); // cap at 50ms to avoid huge jumps
         this.lastTickAt = now;
 
+        // Pending launch: ball sits frozen at center for ~900ms after a score, then
+        // serves toward the opponent of the loser at INITIAL_SPEED. Gives both
+        // players a beat to reposition.
+        if (this.pendingLaunch) {
+            if (now >= this.pendingLaunch.at) {
+                const dir = this.pendingLaunch.dir;
+                resetBall(this.state, dir);
+                this.pendingLaunch = null;
+            }
+            return; // do NOT step physics while frozen
+        }
+
         const result = stepBall(this.state, dt);
 
         // Forward one-shot events to clients
@@ -152,11 +166,13 @@ export class BreakoutRoom extends Room<GameState> {
         }
 
         if (result.scoredAgainst) {
-            // Ball passed loser's paddle. Respawn at center, send toward the OTHER
-            // side (away from where it just exited) so it doesn't immediately fly
-            // back out the same wall. Speed reset to BALL_INITIAL_SPEED in resetBall().
+            // Position ball at center but freeze until launch — feels like a reset
             const opponent: PlayerSlot = result.scoredAgainst === 'p1' ? 'p2' : 'p1';
-            resetBall(this.state, opponent);
+            this.state.ball.x = ARENA_W / 2;
+            this.state.ball.y = ARENA_H / 2;
+            this.state.ball.vx = 0;
+            this.state.ball.vy = 0;
+            this.pendingLaunch = { dir: opponent, at: now + 900 };
         }
 
         // Win check: opponent's bricks at zero

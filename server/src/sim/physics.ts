@@ -32,7 +32,7 @@ export interface SimResult {
     scoredAgainst: PlayerSlot | null; // null if still in play
 }
 
-const SUBSTEPS = 4; // sub-step collision check to avoid tunneling at high speed
+const SUBSTEPS = 10; // higher substep count = no tunneling at high speeds + paddle moves
 
 export function stepBall(state: GameState, dt: number): SimResult {
     const events: SimEvent[] = [];
@@ -114,11 +114,21 @@ function handlePaddle(
     ball.vx = Math.sin(angle) * speed;
     // vy sign set by caller
 
-    // Push ball out so it doesn't get stuck overlapping
+    // Anti-stuck: enforce a minimum vertical component (45% of total speed) so the
+    // ball can never bounce nearly-horizontally and get trapped between paddle hits.
+    const minVy = speed * 0.45;
+    const vySign = slot === 'p1' ? 1 : -1; // p1 (top) → ball moves down, p2 (bottom) → up
+    let absVy = Math.max(minVy, Math.abs(Math.cos(angle) * speed));
+    ball.vy = absVy * vySign;
+    // Re-normalize vx so total speed stays consistent
+    const newAbsVx = Math.sqrt(Math.max(0, speed * speed - ball.vy * ball.vy));
+    ball.vx = ball.vx >= 0 ? newAbsVx : -newAbsVx;
+
+    // Push ball out further (3px clearance) so it can't re-trigger collision next tick
     if (slot === 'p1') {
-        ball.y = paddle.y + halfH + BALL_RADIUS + 0.5;
+        ball.y = paddle.y + halfH + BALL_RADIUS + 3;
     } else {
-        ball.y = paddle.y - halfH - BALL_RADIUS - 0.5;
+        ball.y = paddle.y - halfH - BALL_RADIUS - 3;
     }
 
     events.push({ kind: 'paddleHit', slot, intensity: Math.abs(contact) });

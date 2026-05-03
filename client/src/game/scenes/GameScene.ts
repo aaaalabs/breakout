@@ -28,7 +28,9 @@ import { ComboMeter } from '../ComboMeter';
 import { BackgroundFx } from '../BackgroundFx';
 import { mountExitButton } from '../../ui/exitButton';
 
-const SEND_HZ = 30;
+// 60Hz paddle sends — halves the worst-case "ball passed through paddle" window
+// from ~33ms to ~17ms when a player flicks at the last moment.
+const SEND_HZ = 60;
 const SEND_INTERVAL_MS = 1000 / SEND_HZ;
 
 const TRAIL_LEN = 6;
