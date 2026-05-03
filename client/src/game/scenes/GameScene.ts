@@ -547,25 +547,23 @@ export class GameScene extends Scene {
             // Resurrection — either rematch (instant) or garbage (animated drop-in)
             const newSprite = this.makeBrick(stateBrick.x, stateBrick.y, stateBrick.kind, slot, true);
             arr[idx] = newSprite;
-            // Garbage drop-in: brick falls from above with a small bounce
             if (newSprite) {
+                // Capture the target scale set by makeBrick (setDisplaySize gives
+                // a scale ≈ 0.22 for atlas Image; 1.0 for fallback Rectangle).
+                // Tween FROM 0 TO this captured value so the brick doesn't grow
+                // to its source image size.
+                const targetScaleX = newSprite.scaleX;
+                const targetScaleY = newSprite.scaleY;
                 const targetY = stateBrick.y;
                 newSprite.y = targetY - 60;
-                const ds = (newSprite as Phaser.GameObjects.Image).displayWidth
-                    ? { displayWidth: BRICK_W, displayHeight: BRICK_H }
-                    : null;
                 newSprite.setScale(0);
                 this.tweens.add({
                     targets: newSprite,
                     y: targetY,
-                    scale: 1,
+                    scaleX: targetScaleX,
+                    scaleY: targetScaleY,
                     duration: 360,
                     ease: 'Back.easeOut',
-                    onComplete: () => {
-                        if (ds && (newSprite as Phaser.GameObjects.Image).setDisplaySize) {
-                            (newSprite as Phaser.GameObjects.Image).setDisplaySize(BRICK_W, BRICK_H);
-                        }
-                    },
                 });
             }
         }
