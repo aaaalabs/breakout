@@ -5,10 +5,7 @@
 
 import { Scene } from 'phaser';
 import {
-    ARENA_H,
     COLORS,
-    PADDLE_W,
-    PADDLE_H,
     BALL_RADIUS,
 } from '@breakout/shared';
 import { net, generateHandle } from '../../network/Net';
@@ -27,9 +24,7 @@ export class LobbyScene extends Scene {
     private mode: LobbyMode = 'idle';
     private handle = generateHandle();
 
-    // Background graphics for ambient feel
-    private ambientPaddleTop!: Phaser.GameObjects.Rectangle;
-    private ambientPaddleBottom!: Phaser.GameObjects.Rectangle;
+    // Centered ambient ball that pulses + drifts vertically
     private ambientBall!: Phaser.GameObjects.Arc;
     private ambientGroup!: Phaser.GameObjects.Container;
 
@@ -102,9 +97,6 @@ export class LobbyScene extends Scene {
             ease: THEME.ease.sine,
         });
 
-        // Keep references defined for cleanup typing — no-op visuals
-        this.ambientPaddleTop = this.add.rectangle(0, 0, 0, 0).setAlpha(0);
-        this.ambientPaddleBottom = this.add.rectangle(0, 0, 0, 0).setAlpha(0);
     }
 
     // -- HTML rendering --------------------------------------------------
