@@ -17,15 +17,17 @@ export const PADDLE_Y = {
     p2: ARENA_H - PADDLE_OFFSET_FROM_WALL - PADDLE_H / 2,
 } as const;
 
-// Brick grid
-export const BRICK_COLS = 12;
+// Brick grid — 8 cols × 4 rows per player (Versus) / 8 cols × 6 rows (Solo).
+// BRICK_H chosen so ratio matches the fantasy sprite atlas natural ~1.68:1
+// (no horizontal stretching when displayed).
+export const BRICK_COLS = 8;
 export const BRICK_ROWS_PER_PLAYER = 4;
-export const BRICK_GAP = 4;
+export const BRICK_GAP = 6;
 export const BRICK_W = (ARENA_W - BRICK_GAP * (BRICK_COLS + 1)) / BRICK_COLS;
-export const BRICK_H = 22;
+export const BRICK_H = 56; // 95.5 / 1.68 ≈ 57; rounded to 56 for cleaner pixels
 
 // Vertical placement of brick bands
-export const BRICK_BAND_GAP_FROM_CENTER = 64; // gap between two bands
+export const BRICK_BAND_GAP_FROM_CENTER = 80; // gap between two bands (paddle-side breathing room)
 export const BRICK_BAND_HEIGHT = BRICK_ROWS_PER_PLAYER * (BRICK_H + BRICK_GAP) - BRICK_GAP;
 // P1 bricks: above center (top half of middle band)
 export const BRICK_BAND_Y = {

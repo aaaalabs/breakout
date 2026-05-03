@@ -13,7 +13,6 @@ import {
     BRICK_COLS,
     BRICK_GAP,
     BRICK_H,
-    BRICK_ROWS_PER_PLAYER,
     BRICK_W,
     COLORS,
     PADDLE_H,
@@ -29,7 +28,8 @@ import { mountExitButton } from '../../ui/exitButton';
 import { flashBanner, mountHint } from '../../ui/banner';
 import { BRICK_ATLAS_KEY, brickFrame } from '../../assets/brickAtlas';
 
-const SOLO_ROWS = BRICK_ROWS_PER_PLAYER * 2;
+// Solo wall: 6 rows (was 8 with 12 cols). Bigger bricks → fewer but more readable.
+const SOLO_ROWS = 6;
 const PADDLE_Y_SOLO = ARENA_H - THUMB_ZONE - PADDLE_H / 2 - 20;
 const STARTING_LIVES = 3;
 
@@ -786,13 +786,14 @@ export class SoloScene extends Scene {
 
     private buildBricks() {
         this.bricks = [];
-        const yStart = 80;
-        const ironRows = new Set([3, 4]);
+        const yStart = 100;
+        const ironRows = new Set([2, 3]); // middle rows of 6 (was 3,4 of 8)
 
         const totalCells = SOLO_ROWS * BRICK_COLS;
         const specialIndexes = new Set<number>();
         const specialKinds: Map<number, BrickKind> = new Map();
-        while (specialIndexes.size < 7) {
+        // 5 specials in 48 cells = ~10% density (was 7 in 96, similar feel)
+        while (specialIndexes.size < 5) {
             const idx = Math.floor(Math.random() * totalCells);
             const row = Math.floor(idx / BRICK_COLS);
             if (ironRows.has(row)) continue;
