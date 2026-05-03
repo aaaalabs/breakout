@@ -95,10 +95,7 @@ html, body {
 }
 
 .lobby__title .accent {
-    background: linear-gradient(90deg, var(--p1), var(--p2));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: var(--p1);
 }
 
 .lobby__sub {
@@ -200,7 +197,8 @@ html, body {
     background: transparent;
     border: 1px solid var(--line);
     color: var(--text);
-    padding: 6px 14px;
+    padding: 12px 18px;
+    min-height: 44px;
     border-radius: 999px;
     font-family: inherit;
     font-size: 12px;
@@ -305,7 +303,8 @@ html, body {
     letter-spacing: 0.14em;
     text-transform: uppercase;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 12px 18px;
+    min-height: 44px;
     transition: color 180ms ease;
 }
 

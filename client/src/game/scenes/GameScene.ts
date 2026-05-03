@@ -437,6 +437,21 @@ export class GameScene extends Scene {
     }
 
     private spawnBrickBurst(x: number, y: number, color: number) {
+        // Single-frame white flash at impact point (Apple-style "tap feedback").
+        const flash = this.add.image(x, y, this.particleKey);
+        flash.setScale(2.4);
+        flash.setTint(0xffffff);
+        flash.setAlpha(0.95);
+        this.playLayer.add(flash);
+        this.tweens.add({
+            targets: flash,
+            alpha: 0,
+            scale: 1.0,
+            duration: 140,
+            ease: 'Cubic.easeOut',
+            onComplete: () => flash.destroy(),
+        });
+
         const COUNT = 6;
         for (let i = 0; i < COUNT; i++) {
             const angle = (Math.PI * 2 * i) / COUNT + Math.random() * 0.3;
@@ -493,22 +508,36 @@ export class GameScene extends Scene {
     private popCountdown(text: string, isGo = false) {
         this.countdownText.setText(text);
         this.countdownText.setAlpha(0);
-        this.countdownText.setScale(1.4);
+        // Start small, overshoot toward 1.0 — feels like the number "arrives" rather than retreats.
+        this.countdownText.setScale(isGo ? 1.0 : 0.6);
         this.tweens.killTweensOf(this.countdownText);
-        this.tweens.add({
-            targets: this.countdownText,
-            scale: 1,
-            alpha: 1,
-            duration: 240,
-            ease: THEME.ease.back,
-        });
-        this.tweens.add({
-            targets: this.countdownText,
-            alpha: 0,
-            duration: isGo ? 320 : 480,
-            delay: isGo ? 380 : 520,
-            ease: THEME.ease.in,
-        });
+
+        if (isGo) {
+            // GO: bloom outward while fading — release energy
+            this.tweens.add({
+                targets: this.countdownText,
+                scale: 1.25,
+                alpha: 0,
+                duration: 360,
+                ease: 'Quint.easeOut',
+            });
+        } else {
+            // Number arrives with a confident overshoot, then exits
+            this.tweens.add({
+                targets: this.countdownText,
+                scale: 1.0,
+                alpha: 1,
+                duration: 280,
+                ease: 'Back.easeOut',
+            });
+            this.tweens.add({
+                targets: this.countdownText,
+                alpha: 0,
+                duration: 380,
+                delay: 560,
+                ease: THEME.ease.in,
+            });
+        }
     }
 
     // ------------------------------------------------------------------
