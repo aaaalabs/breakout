@@ -22,6 +22,7 @@ import {
     PADDLE_W,
 } from '@breakout/shared';
 import { THEME } from '../../ui/theme';
+import { sfx } from '../../audio/Sfx';
 
 const SOLO_ROWS = BRICK_ROWS_PER_PLAYER * 2; // double the wall vs vs-mode (8 rows)
 const PADDLE_Y_SOLO = ARENA_H - 60;
@@ -99,9 +100,10 @@ export class SoloScene extends Scene {
             ease: THEME.ease.out,
         });
 
-        // Input
+        // Input — also unlocks audio context (browser policy)
         this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.handlePointer(p));
         this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+            sfx.unlock();
             this.handlePointer(p);
             if (this.ballState.onPaddle) this.launchBall();
         });
@@ -110,10 +112,14 @@ export class SoloScene extends Scene {
             this.keyA = this.input.keyboard.addKey('A');
             this.keyD = this.input.keyboard.addKey('D');
             this.input.keyboard.on('keydown-SPACE', () => {
+                sfx.unlock();
                 if (this.ballState.onPaddle) this.launchBall();
             });
             this.input.keyboard.on('keydown-ESC', () => this.exit());
         }
+
+        // Game-start jingle (after a tiny delay so user has visual context)
+        this.time.delayedCall(220, () => sfx.soloStart());
 
         this.events.once('shutdown', () => this.cleanup());
         this.events.once('destroy', () => this.cleanup());
@@ -162,9 +168,9 @@ export class SoloScene extends Scene {
         b.x += b.vx * dt;
         b.y += b.vy * dt;
 
-        if (b.x - BALL_RADIUS < 0) { b.x = BALL_RADIUS; b.vx = Math.abs(b.vx); }
-        if (b.x + BALL_RADIUS > ARENA_W) { b.x = ARENA_W - BALL_RADIUS; b.vx = -Math.abs(b.vx); }
-        if (b.y - BALL_RADIUS < 0) { b.y = BALL_RADIUS; b.vy = Math.abs(b.vy); }
+        if (b.x - BALL_RADIUS < 0) { b.x = BALL_RADIUS; b.vx = Math.abs(b.vx); sfx.wallHit(); }
+        if (b.x + BALL_RADIUS > ARENA_W) { b.x = ARENA_W - BALL_RADIUS; b.vx = -Math.abs(b.vx); sfx.wallHit(); }
+        if (b.y - BALL_RADIUS < 0) { b.y = BALL_RADIUS; b.vy = Math.abs(b.vy); sfx.wallHit(); }
 
         // Ball drops below paddle = lose a life
         if (b.y - BALL_RADIUS > ARENA_H) {
@@ -185,6 +191,7 @@ export class SoloScene extends Scene {
             b.vy = -Math.abs(Math.cos(angle) * speed);
             b.y = PADDLE_Y_SOLO - halfH - BALL_RADIUS - 0.5;
             this.cameras.main.shake(80, 0.0015 + Math.abs(contact) * 0.003);
+            sfx.paddleHit(Math.abs(contact));
         }
 
         // Bricks
@@ -217,6 +224,8 @@ export class SoloScene extends Scene {
         this.aliveCount--;
         this.score += 10;
         this.hudScore.setText(`${this.score}`);
+        sfx.brickBreak();
+        sfx.maybeCombo();
 
         // Visual: white flash, scale-down, particle burst
         const x = brick.x;
@@ -276,11 +285,13 @@ export class SoloScene extends Scene {
         this.ballState.vy = -Math.cos(angle) * speed;
         this.ballState.onPaddle = false;
         this.hudHint.setText('');
+        sfx.launch();
     }
 
     private loseLife() {
         this.lives -= 1;
         this.hudLives.setText('●'.repeat(this.lives) + '○'.repeat(STARTING_LIVES - this.lives));
+        sfx.loseLife();
         if (this.lives <= 0) {
             this.lose();
             return;
@@ -289,21 +300,23 @@ export class SoloScene extends Scene {
         this.ballState.vx = 0;
         this.ballState.vy = 0;
         this.cameras.main.flash(160, 30, 30, 30);
-        this.hudHint.setText('Tap or SPACE to launch');
+        this.hudHint.setText('👆 tap or SPACE to launch');
     }
 
     private win() {
         this.finished = true;
         this.hudHint.setText('');
         this.cameras.main.flash(220, 0, 240, 240);
-        this.showResult('YOU CLEARED THE WALL.', `${this.score} POINTS · ${this.lives} LIVES LEFT`);
+        sfx.win();
+        this.showResult('🏆  YOU CLEARED THE WALL!', `${this.score} POINTS · ${this.lives} LIVES LEFT`);
     }
 
     private lose() {
         this.finished = true;
         this.ballState.onPaddle = true;
         this.cameras.main.flash(220, 240, 60, 60);
-        this.showResult('THE WALL HELD.', `${this.score} POINTS · ${this.bricks.length - this.aliveCount} BRICKS BROKEN`);
+        sfx.lose();
+        this.showResult('💔  THE WALL HELD.', `${this.score} POINTS · ${this.bricks.length - this.aliveCount} BRICKS BROKEN`);
     }
 
     private showResult(headline: string, subline: string) {

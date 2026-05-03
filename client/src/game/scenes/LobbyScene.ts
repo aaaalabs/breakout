@@ -13,6 +13,7 @@ import {
 } from '@breakout/shared';
 import { net, generateHandle } from '../../network/Net';
 import { THEME } from '../../ui/theme';
+import { sfx } from '../../audio/Sfx';
 
 interface LobbyData {
     autoJoinRoomId?: string;
@@ -134,44 +135,62 @@ export class LobbyScene extends Scene {
         const quick = document.createElement('button');
         quick.className = 'card card--primary';
         quick.innerHTML = `
-            <span class="card__label">Quick Match</span>
-            <span class="card__hint">Find an opponent now</span>
+            <span class="card__icon" aria-hidden="true">⚔️</span>
+            <span class="card__text">
+                <span class="card__label">Quick Match</span>
+                <span class="card__hint">Find an opponent now</span>
+            </span>
+            <span class="card__chev" aria-hidden="true">▶</span>
         `;
-        quick.addEventListener('click', () => this.handleQuickMatch());
+        quick.addEventListener('click', () => { sfx.unlock(); sfx.uiClick(); this.handleQuickMatch(); });
         cards.appendChild(quick);
 
         // Solo practice (no opponent needed)
         const solo = document.createElement('button');
         solo.className = 'card';
         solo.innerHTML = `
-            <span class="card__label">Solo Practice</span>
-            <span class="card__hint">Classic single-player</span>
+            <span class="card__icon" aria-hidden="true">🧱</span>
+            <span class="card__text">
+                <span class="card__label">Solo Practice</span>
+                <span class="card__hint">Classic single-player</span>
+            </span>
+            <span class="card__chev" aria-hidden="true">▶</span>
         `;
-        solo.addEventListener('click', () => this.handleSolo());
+        solo.addEventListener('click', () => { sfx.unlock(); sfx.uiClick(); this.handleSolo(); });
         cards.appendChild(solo);
 
         // Private room
         const priv = document.createElement('button');
         priv.className = 'card';
         priv.innerHTML = `
-            <span class="card__label">Create Private Room</span>
-            <span class="card__hint">Get a link to share</span>
+            <span class="card__icon" aria-hidden="true">🔗</span>
+            <span class="card__text">
+                <span class="card__label">Create Private Room</span>
+                <span class="card__hint">Get a link to share</span>
+            </span>
+            <span class="card__chev" aria-hidden="true">▶</span>
         `;
-        priv.addEventListener('click', () => this.handleCreatePrivate());
+        priv.addEventListener('click', () => { sfx.unlock(); sfx.uiClick(); this.handleCreatePrivate(); });
         cards.appendChild(priv);
 
         // Join by code
         const join = document.createElement('div');
         join.className = 'card join';
+        const icon = document.createElement('span');
+        icon.className = 'card__icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = '🎟️';
         const input = document.createElement('input');
         input.className = 'join__input';
-        input.placeholder = 'Paste room code or URL';
+        input.placeholder = 'Paste room code';
         input.spellcheck = false;
         input.autocapitalize = 'characters';
         const btn = document.createElement('button');
         btn.className = 'join__btn';
         btn.textContent = 'Join';
         const submit = () => {
+            sfx.unlock();
+            sfx.uiClick();
             const id = this.extractRoomId(input.value);
             if (id) this.handleJoinById(id);
         };
@@ -179,6 +198,7 @@ export class LobbyScene extends Scene {
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') submit();
         });
+        join.appendChild(icon);
         join.appendChild(input);
         join.appendChild(btn);
         cards.appendChild(join);

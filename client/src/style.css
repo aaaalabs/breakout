@@ -117,8 +117,8 @@ html, body {
 .card {
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 22px 24px;
+    border-radius: 16px;
+    padding: 18px 20px;
     color: var(--text);
     font-family: inherit;
     font-size: 15px;
@@ -131,10 +131,44 @@ html, body {
                 background 220ms ease;
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 16px;
     width: 100%;
+    min-height: 64px;
 }
+
+.card__icon {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    line-height: 1;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1), background 220ms ease;
+}
+
+.card:hover .card__icon { transform: scale(1.08) rotate(-3deg); background: rgba(0, 240, 240, 0.10); }
+.card--primary .card__icon { background: rgba(0, 240, 240, 0.12); }
+
+.card__text {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.card__chev {
+    flex: 0 0 auto;
+    color: var(--dim);
+    font-size: 14px;
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), color 220ms ease;
+}
+
+.card:hover .card__chev { transform: translateX(4px); color: var(--p1); }
 
 .card:hover {
     transform: translateY(-1px);
@@ -356,3 +390,39 @@ html, body {
 .end-btn:hover { transform: translateY(-1px); border-color: var(--p1); color: var(--p1); }
 .end-btn--primary { border-color: rgba(0, 240, 240, 0.45); }
 .end-btn--primary:hover { border-color: var(--p1); }
+
+/* Sound mute toggle (always visible top-right) ------------------------ */
+
+.sound-toggle {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 200ms ease,
+                background 200ms ease;
+    pointer-events: auto;
+}
+
+.sound-toggle:hover { border-color: var(--p1); transform: scale(1.06); }
+.sound-toggle:active { transform: scale(0.96); }
+.sound-toggle.is-muted { opacity: 0.55; }
+
+@media (max-width: 480px) {
+    .sound-toggle { top: 10px; right: 10px; width: 40px; height: 40px; font-size: 18px; }
+    .lobby__title { font-size: 44px; }
+    .card { padding: 14px 16px; }
+    .card__icon { width: 40px; height: 40px; font-size: 26px; }
+}

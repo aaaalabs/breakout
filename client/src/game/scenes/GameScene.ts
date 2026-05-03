@@ -23,6 +23,7 @@ import type {
 } from '@breakout/shared';
 import { net } from '../../network/Net';
 import { THEME } from '../../ui/theme';
+import { sfx } from '../../audio/Sfx';
 
 const SEND_HZ = 30;
 const SEND_INTERVAL_MS = 1000 / SEND_HZ;
@@ -457,9 +458,8 @@ export class GameScene extends Scene {
     }
 
     private handleBrickBreak(_ev: BrickBreakEvent) {
-        // The actual destroy + particle burst is driven by state change — keeps
-        // visuals consistent even if a message is dropped. The event hook is
-        // available for future SFX/music triggers.
+        sfx.brickBreak();
+        sfx.maybeCombo();
     }
 
     private handlePaddleHit(ev: PaddleHitEvent) {
@@ -467,6 +467,7 @@ export class GameScene extends Scene {
         const intensity = Math.max(0.2, Math.min(1, ev.intensity ?? 0.5));
         this.cameras.main.shake(80, 0.0035 * intensity);
         this.trailFlashUntil = this.time.now + 100;
+        sfx.paddleHit(intensity);
 
         // Pulse the paddle that got hit
         const target = ev.slot === 'p1' ? this.paddleP1 : this.paddleP2;
@@ -534,12 +535,15 @@ export class GameScene extends Scene {
             if (display !== this.lastCountdownNumber) {
                 this.lastCountdownNumber = display;
                 this.popCountdown(`${display}`);
+                sfx.countdownPip();
             }
         } else if (phase === 'playing') {
             this.hudCenter.setText('');
             if (this.lastCountdownNumber !== -1) {
                 this.lastCountdownNumber = -1;
                 this.popCountdown('GO', true);
+                sfx.countdownGo();
+                sfx.matchStart();
             }
         } else if (phase === 'waiting') {
             this.hudCenter.setText('STANDBY');
@@ -590,6 +594,9 @@ export class GameScene extends Scene {
     private handleMatchFinished() {
         const room = net.room;
         if (!room) return;
+        // Did we win?
+        if (this.mySlot && room.state.winnerSlot === this.mySlot) sfx.win();
+        else sfx.lose();
         // Dim arena before handing off
         this.tweens.add({
             targets: [this.bgLayer, this.brickLayer, this.playLayer, this.hudLayer],
