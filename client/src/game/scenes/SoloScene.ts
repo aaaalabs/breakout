@@ -75,6 +75,7 @@ export class SoloScene extends Scene {
     private keyD?: Phaser.Input.Keyboard.Key;
     private kbPaddleX: number | null = null;
     private particleKey = 'spark-solo';
+    private freezeUntil = 0;
 
     constructor() {
         super({ key: 'SoloScene' });
@@ -136,6 +137,10 @@ export class SoloScene extends Scene {
         const dt = Math.min(0.05, deltaMs / 1000);
         this.combo?.tick(time);
 
+        // Hit-stop: freeze the world briefly for impact moments. Renders + tweens
+        // continue (so the camera shake & particles still play), only the sim pauses.
+        const frozen = time < this.freezeUntil;
+
         // Keyboard movement
         const left = this.cursors?.left.isDown || this.keyA?.isDown;
         const right = this.cursors?.right.isDown || this.keyD?.isDown;
@@ -153,7 +158,7 @@ export class SoloScene extends Scene {
         if (this.ballState.onPaddle) {
             this.ballState.x = this.paddle.x;
             this.ballState.y = PADDLE_Y_SOLO - PADDLE_H / 2 - BALL_RADIUS - 4;
-        } else {
+        } else if (!frozen) {
             this.stepBall(dt);
         }
 
@@ -176,9 +181,9 @@ export class SoloScene extends Scene {
         b.x += b.vx * dt;
         b.y += b.vy * dt;
 
-        if (b.x - BALL_RADIUS < 0) { b.x = BALL_RADIUS; b.vx = Math.abs(b.vx); sfx.wallHit(); }
-        if (b.x + BALL_RADIUS > ARENA_W) { b.x = ARENA_W - BALL_RADIUS; b.vx = -Math.abs(b.vx); sfx.wallHit(); }
-        if (b.y - BALL_RADIUS < 0) { b.y = BALL_RADIUS; b.vy = Math.abs(b.vy); sfx.wallHit(); }
+        if (b.x - BALL_RADIUS < 0) { b.x = BALL_RADIUS; b.vx = Math.abs(b.vx); sfx.wallHit(); this.squashBall('x', 0.6); }
+        if (b.x + BALL_RADIUS > ARENA_W) { b.x = ARENA_W - BALL_RADIUS; b.vx = -Math.abs(b.vx); sfx.wallHit(); this.squashBall('x', 0.6); }
+        if (b.y - BALL_RADIUS < 0) { b.y = BALL_RADIUS; b.vy = Math.abs(b.vy); sfx.wallHit(); this.squashBall('y', 0.6); }
 
         // Ball drops below paddle = lose a life
         if (b.y - BALL_RADIUS > ARENA_H) {
@@ -200,6 +205,10 @@ export class SoloScene extends Scene {
             b.y = PADDLE_Y_SOLO - halfH - BALL_RADIUS - 0.5;
             this.cameras.main.shake(80, 0.0015 + Math.abs(contact) * 0.003);
             sfx.paddleHit(Math.abs(contact));
+            this.squashBall('y');
+            // Save bonus: if ball was within 60px of falling, give it that "phew" feel
+            const wasClose = (PADDLE_Y_SOLO - b.y) < 70;
+            if (wasClose) this.freezeUntil = this.scene.systems.game.loop.time + 70;
         }
 
         // Bricks
@@ -235,6 +244,10 @@ export class SoloScene extends Scene {
         this.hudScore.setText(`${this.score}`);
         sfx.brickBreak();
         sfx.maybeCombo();
+        this.squashBall('y', 0.5);
+        // Hit-stop on milestones: last brick (great drama), big combo (rewards skill)
+        if (this.aliveCount === 0) this.freezeUntil = this.time.now + 140;
+        else if (result.tier >= 4) this.freezeUntil = this.time.now + 50;
 
         // Visual: white flash, scale-down, particle burst
         const x = brick.x;
@@ -488,6 +501,27 @@ export class SoloScene extends Scene {
         const x = Math.max(PADDLE_W / 2, Math.min(ARENA_W - PADDLE_W / 2, pointer.worldX));
         this.paddle.x = x;
         this.kbPaddleX = x;
+    }
+
+    /** Brief squash-and-stretch on impact. axis = main impact direction. */
+    private squashBall(axis: 'x' | 'y', intensity = 1) {
+        const compression = 0.55 + (1 - intensity) * 0.3; // 0.55..0.85
+        const stretch = 1.45 - (1 - intensity) * 0.2;     // 1.45..1.25
+        const sx = axis === 'x' ? compression : stretch;
+        const sy = axis === 'y' ? compression : stretch;
+        this.tweens.killTweensOf([this.ball, this.ballGlow]);
+        this.tweens.add({
+            targets: [this.ball, this.ballGlow],
+            scaleX: sx,
+            scaleY: sy,
+            duration: 55,
+            yoyo: true,
+            ease: 'Quint.easeOut',
+            onComplete: () => {
+                this.ball.setScale(1);
+                this.ballGlow.setScale(1);
+            },
+        });
     }
 
     private cleanup() {

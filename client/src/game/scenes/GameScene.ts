@@ -77,6 +77,7 @@ export class GameScene extends Scene {
     private renderPaddleP1X = 0;
     private renderPaddleP2X = 0;
     private combo!: ComboMeter;
+    private renderFrozenUntil = 0;
 
     constructor() {
         super({ key: 'GameScene' });
@@ -194,11 +195,9 @@ export class GameScene extends Scene {
         this.combo?.tick(time);
 
         // Frame-rate-independent smoothing factor (~30Hz half-life).
-        // Higher = snappier (less lag) but more visual jitter at low patch rate.
-        // Lower  = smoother (more lag) but feels rubbery on input.
-        // 0.35 at 60fps ≈ catches up ~95% in 6 frames (100ms) — invisible to eye.
+        // During hit-stop the lerp factor is zero so the ball appears frozen.
         const dtMs = this.game.loop.delta;
-        const a = 1 - Math.exp(-dtMs / 33);
+        const a = time < this.renderFrozenUntil ? 0 : 1 - Math.exp(-dtMs / 33);
 
         // Paddles — own paddle uses local prediction (already in sprite),
         // opponent paddle interpolates from server.
@@ -500,9 +499,12 @@ export class GameScene extends Scene {
     private handleBrickBreak(ev: BrickBreakEvent) {
         sfx.brickBreak();
         sfx.maybeCombo();
-        // Only count MY bricks (the ones I'm clearing) toward MY combo.
+        this.squashBall('y', 0.5);
+        // Only count MY bricks toward MY combo
         if (ev.slot === this.mySlot) {
-            this.combo.register(this.time.now);
+            const result = this.combo.register(this.time.now);
+            // Hit-stop on big combos (visible only — server doesn't pause)
+            if (result.tier >= 4) this.freezeRender(50);
         }
     }
 
@@ -512,6 +514,7 @@ export class GameScene extends Scene {
         this.cameras.main.shake(80, 0.0035 * intensity);
         this.trailFlashUntil = this.time.now + 100;
         sfx.paddleHit(intensity);
+        this.squashBall('y', intensity);
 
         // Pulse the paddle that got hit
         const target = ev.slot === 'p1' ? this.paddleP1 : this.paddleP2;
@@ -656,6 +659,31 @@ export class GameScene extends Scene {
                 aliveCountP2: room.state.aliveCountP2,
             });
             this.scene.bringToTop('EndScene');
+        });
+    }
+
+    private freezeRender(ms: number) {
+        this.renderFrozenUntil = this.time.now + ms;
+    }
+
+    /** Brief squash-and-stretch on impact. axis = main impact direction. */
+    private squashBall(axis: 'x' | 'y', intensity = 1) {
+        const compression = 0.55 + (1 - intensity) * 0.3;
+        const stretch = 1.45 - (1 - intensity) * 0.2;
+        const sx = axis === 'x' ? compression : stretch;
+        const sy = axis === 'y' ? compression : stretch;
+        this.tweens.killTweensOf([this.ball, this.ballGlow]);
+        this.tweens.add({
+            targets: [this.ball, this.ballGlow],
+            scaleX: sx,
+            scaleY: sy,
+            duration: 55,
+            yoyo: true,
+            ease: 'Quint.easeOut',
+            onComplete: () => {
+                this.ball.setScale(1);
+                this.ballGlow.setScale(1);
+            },
         });
     }
 
