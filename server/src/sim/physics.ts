@@ -142,6 +142,8 @@ function handleBrickCollisions(
     events: SimEvent[],
     state: GameState
 ): void {
+    // Track bricks that were killed THIS step so bombs can chain
+    const killedThisStep: Brick[] = [];
     bricks.forEach((brick) => {
         if (!brick.alive) return;
         const dx = ball.x - brick.x;
@@ -166,7 +168,6 @@ function handleBrickCollisions(
         // Multi-hit: decrement HP. Only destroy when HP reaches 0.
         brick.hp = Math.max(0, brick.hp - 1);
         if (brick.hp > 0) {
-            // Keep brick alive, but emit hit event so client can play 'thunk' SFX + flash
             events.push({ kind: 'wallHit', side: 'top', x: brick.x, y: brick.y });
             return;
         }
@@ -176,6 +177,7 @@ function handleBrickCollisions(
         else state.aliveCountP2--;
 
         events.push({ kind: 'brickBreak', slot, x: brick.x, y: brick.y });
+        killedThisStep.push(brick);
 
         // Speed ramp
         const totalKilled =
@@ -196,6 +198,25 @@ function handleBrickCollisions(
             }
         }
     });
+
+    // Resolve special-brick effects AFTER the iteration. Bombs chain to neighbors.
+    for (const brick of killedThisStep) {
+        if (brick.kind === 'bomb') {
+            const RADIUS = 90;
+            bricks.forEach((other) => {
+                if (!other.alive || other === brick) return;
+                const d = Math.hypot(other.x - brick.x, other.y - brick.y);
+                if (d > RADIUS) return;
+                other.hp = 0;
+                other.alive = 0;
+                if (slot === 'p1') state.aliveCountP1--;
+                else state.aliveCountP2--;
+                events.push({ kind: 'brickBreak', slot, x: other.x, y: other.y });
+                // Note: bomb-chaining-bomb is intentionally one-level only here to keep
+                // the server simple. Cascades happen naturally as the ball travels.
+            });
+        }
+    }
 }
 
 export function resetBall(state: GameState, towardSlot: PlayerSlot): void {

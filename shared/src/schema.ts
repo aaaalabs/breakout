@@ -6,6 +6,7 @@ export class Brick extends Schema {
     @type('uint8') alive: number = 1; // 1 = alive, 0 = destroyed
     @type('uint8') hp: number = 1;    // remaining hits to destroy
     @type('uint8') maxHp: number = 1; // initial hp (for damage-state rendering)
+    @type('string') kind: string = 'normal'; // 'normal' | 'iron' | 'gift' | 'diamond' | 'bomb'
 }
 
 export class Paddle extends Schema {
