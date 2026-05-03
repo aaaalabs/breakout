@@ -11,6 +11,7 @@ import {
 import { net, generateHandle } from '../../network/Net';
 import { THEME } from '../../ui/theme';
 import { sfx } from '../../audio/Sfx';
+import { BackgroundFx } from '../BackgroundFx';
 
 interface LobbyData {
     autoJoinRoomId?: string;
@@ -27,6 +28,8 @@ export class LobbyScene extends Scene {
     // Centered ambient ball that pulses + drifts vertically
     private ambientBall!: Phaser.GameObjects.Arc;
     private ambientGroup!: Phaser.GameObjects.Container;
+    private bgfx!: BackgroundFx;
+    private bgLayer!: Phaser.GameObjects.Container;
 
     constructor() {
         super({ key: 'LobbyScene' });
@@ -35,6 +38,10 @@ export class LobbyScene extends Scene {
     create(data: LobbyData) {
         // Solid background (Phaser scale handles letterboxing of the arena box itself)
         this.cameras.main.setBackgroundColor(`#${COLORS.bg.toString(16).padStart(6, '0')}`);
+
+        // Background motes layer (subtle drifting depth)
+        this.bgLayer = this.add.container(0, 0);
+        this.bgfx = new BackgroundFx(this, this.bgLayer);
 
         // Build ambient backdrop
         this.buildAmbientBackdrop();
@@ -59,6 +66,10 @@ export class LobbyScene extends Scene {
         // Cleanup on shutdown
         this.events.once('shutdown', () => this.cleanup());
         this.events.once('destroy', () => this.cleanup());
+    }
+
+    update(time: number) {
+        this.bgfx?.tick(time);
     }
 
     // -- Ambient backdrop ------------------------------------------------
