@@ -7,6 +7,8 @@ import { Scene } from 'phaser';
 import {
     COLORS,
     BALL_RADIUS,
+    PADDLE_W,
+    PADDLE_H,
 } from '@breakout/shared';
 import { net, generateHandle } from '../../network/Net';
 import { THEME } from '../../ui/theme';
@@ -25,9 +27,13 @@ export class LobbyScene extends Scene {
     private mode: LobbyMode = 'idle';
     private handle = generateHandle();
 
-    // Centered ambient ball that pulses + drifts vertically
-    private ambientBall!: Phaser.GameObjects.Arc;
+    // Tiny live breakout sim in the center — paddles chase a bouncing ball.
+    // Confined to ±AMBIENT_HALF_W around the canvas center so it never reads as offset.
     private ambientGroup!: Phaser.GameObjects.Container;
+    private ambientBall!: Phaser.GameObjects.Arc;
+    private ambientPaddleTop!: Phaser.GameObjects.Rectangle;
+    private ambientPaddleBottom!: Phaser.GameObjects.Rectangle;
+    private ambientState = { bx: 0, by: 0, bvx: 1, bvy: 1 };
     private bgfx!: BackgroundFx;
     private bgLayer!: Phaser.GameObjects.Container;
 
@@ -68,8 +74,35 @@ export class LobbyScene extends Scene {
         this.events.once('destroy', () => this.cleanup());
     }
 
-    update(time: number) {
+    update(time: number, deltaMs: number) {
         this.bgfx?.tick(time);
+        this.tickAmbientSim(deltaMs);
+    }
+
+    private tickAmbientSim(deltaMs: number) {
+        if (!this.ambientBall) return;
+        const dt = Math.min(0.05, deltaMs / 1000);
+        const HALF_W = 130;   // ball oscillates within ±130px (well inside lobby column)
+        const HALF_H = 200;   // tall thin "arena"
+        const SPEED = 110;    // px/s — slow & tasteful
+        const PADDLE_LERP = 0.06; // sluggish chase = visual interest
+
+        // Ball motion in ambient state (relative to group center 0,0)
+        const s = this.ambientState;
+        s.bx += s.bvx * SPEED * dt;
+        s.by += s.bvy * SPEED * dt;
+        if (s.bx < -HALF_W) { s.bx = -HALF_W; s.bvx = Math.abs(s.bvx); }
+        if (s.bx > HALF_W)  { s.bx = HALF_W;  s.bvx = -Math.abs(s.bvx); }
+        if (s.by < -HALF_H) { s.by = -HALF_H; s.bvy = Math.abs(s.bvy); }
+        if (s.by > HALF_H)  { s.by = HALF_H;  s.bvy = -Math.abs(s.bvy); }
+
+        this.ambientBall.setPosition(s.bx, s.by);
+
+        // Paddles lerp toward ball X — sluggish, gives a "trying to catch" feel
+        const topX = this.ambientPaddleTop.x + (s.bx - this.ambientPaddleTop.x) * PADDLE_LERP;
+        const botX = this.ambientPaddleBottom.x + (s.bx - this.ambientPaddleBottom.x) * PADDLE_LERP;
+        this.ambientPaddleTop.x = Math.max(-HALF_W, Math.min(HALF_W, topX));
+        this.ambientPaddleBottom.x = Math.max(-HALF_W, Math.min(HALF_W, botX));
     }
 
     // -- Ambient backdrop ------------------------------------------------
@@ -80,34 +113,36 @@ export class LobbyScene extends Scene {
         this.ambientGroup = this.add.container(width / 2, height / 2);
         this.ambientGroup.setAlpha(0.42);
 
-        // No drifting paddles in lobby — they competed visually with the centered
-        // lobby card column on wide viewports, creating the perception of a
-        // shifted/offset background. Keep a single gentle centered ambient ball
-        // that pulses subtly in place, plus a slow vertical drift.
-        this.ambientBall = this.add.circle(0, 0, BALL_RADIUS * 1.2, COLORS.ball, 0.85);
-        this.ambientGroup.add(this.ambientBall);
+        // Mini-paddles ABOVE and BELOW the lobby card column (centered in canvas).
+        this.ambientPaddleTop = this.add.rectangle(0, -210, PADDLE_W * 0.7, PADDLE_H * 0.85, COLORS.p1, 0.6);
+        this.ambientPaddleBottom = this.add.rectangle(0, 210, PADDLE_W * 0.7, PADDLE_H * 0.85, COLORS.p2, 0.6);
+        this.ambientBall = this.add.circle(0, 0, BALL_RADIUS * 1.1, COLORS.ball, 0.95);
+        this.ambientGroup.add([this.ambientPaddleTop, this.ambientPaddleBottom, this.ambientBall]);
 
-        // Soft pulse around the center — symmetric, doesn't compete with HTML overlay
+        // Initial ball trajectory — random angle, normalized
+        const a = Math.random() * Math.PI * 2;
+        this.ambientState.bvx = Math.cos(a);
+        this.ambientState.bvy = Math.sin(a) * 0.8;
+
+        // Subtle ball pulse so it reads as alive even when stationary moments
         this.tweens.add({
             targets: this.ambientBall,
-            scale: { from: 0.85, to: 1.15 },
-            alpha: { from: 0.55, to: 0.85 },
-            duration: 2400,
+            scale: { from: 0.92, to: 1.08 },
+            duration: 1800,
             yoyo: true,
             repeat: -1,
             ease: THEME.ease.sine,
         });
 
-        // Faint vertical drift — within ±40px so it never reads as "offset"
+        // Very gentle vertical drift of the whole sim — ±20px (barely perceptible)
         this.tweens.add({
             targets: this.ambientGroup,
-            y: { from: height / 2 - 40, to: height / 2 + 40 },
-            duration: 6800,
+            y: { from: height / 2 - 20, to: height / 2 + 20 },
+            duration: 8000,
             yoyo: true,
             repeat: -1,
             ease: THEME.ease.sine,
         });
-
     }
 
     // -- HTML rendering --------------------------------------------------
