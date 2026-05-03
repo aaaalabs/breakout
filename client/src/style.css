@@ -41,8 +41,9 @@ html, body {
     display: flex;
     justify-content: center;
     align-items: center;
+    /* Gradient bright-spot aligned to viewport center so lobby content sits on it */
     background:
-        radial-gradient(ellipse at 50% 30%, #14142a 0%, #0a0a14 70%);
+        radial-gradient(ellipse at 50% 50%, #14142a 0%, #0a0a14 75%);
 }
 
 #game-container {
