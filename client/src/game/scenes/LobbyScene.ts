@@ -72,44 +72,39 @@ export class LobbyScene extends Scene {
         const { width, height } = this.scale.gameSize;
 
         this.ambientGroup = this.add.container(width / 2, height / 2);
-        this.ambientGroup.setAlpha(0.28);
+        this.ambientGroup.setAlpha(0.42);
 
-        // No arena outline — it visually competed with the lobby card column,
-        // making the layout feel "shifted." Keep ambient motion only.
-        const h = ARENA_H * 0.86;
+        // No drifting paddles in lobby — they competed visually with the centered
+        // lobby card column on wide viewports, creating the perception of a
+        // shifted/offset background. Keep a single gentle centered ambient ball
+        // that pulses subtly in place, plus a slow vertical drift.
+        this.ambientBall = this.add.circle(0, 0, BALL_RADIUS * 1.2, COLORS.ball, 0.85);
+        this.ambientGroup.add(this.ambientBall);
 
-        this.ambientPaddleTop = this.add.rectangle(0, -h / 2 + 24, PADDLE_W, PADDLE_H, COLORS.p1, 0.55);
-        this.ambientPaddleBottom = this.add.rectangle(0, h / 2 - 24, PADDLE_W, PADDLE_H, COLORS.p2, 0.55);
-        this.ambientBall = this.add.circle(0, 0, BALL_RADIUS, COLORS.ball, 0.85);
-        this.ambientGroup.add([this.ambientPaddleTop, this.ambientPaddleBottom, this.ambientBall]);
-
-        // Counter-motion paddles for visual rhythm (per UX review P2)
-        this.tweens.add({
-            targets: this.ambientPaddleTop,
-            x: { from: -120, to: 120 },
-            duration: 4200,
-            yoyo: true,
-            repeat: -1,
-            ease: THEME.ease.sine,
-        });
-        this.tweens.add({
-            targets: this.ambientPaddleBottom,
-            x: { from: 120, to: -120 },
-            duration: 5100,
-            delay: 400,
-            yoyo: true,
-            repeat: -1,
-            ease: THEME.ease.sine,
-        });
+        // Soft pulse around the center — symmetric, doesn't compete with HTML overlay
         this.tweens.add({
             targets: this.ambientBall,
-            x: { from: -180, to: 180 },
-            y: { from: -h / 4, to: h / 4 },
-            duration: 5400,
+            scale: { from: 0.85, to: 1.15 },
+            alpha: { from: 0.55, to: 0.85 },
+            duration: 2400,
             yoyo: true,
             repeat: -1,
             ease: THEME.ease.sine,
         });
+
+        // Faint vertical drift — within ±40px so it never reads as "offset"
+        this.tweens.add({
+            targets: this.ambientGroup,
+            y: { from: height / 2 - 40, to: height / 2 + 40 },
+            duration: 6800,
+            yoyo: true,
+            repeat: -1,
+            ease: THEME.ease.sine,
+        });
+
+        // Keep references defined for cleanup typing — no-op visuals
+        this.ambientPaddleTop = this.add.rectangle(0, 0, 0, 0).setAlpha(0);
+        this.ambientPaddleBottom = this.add.rectangle(0, 0, 0, 0).setAlpha(0);
     }
 
     // -- HTML rendering --------------------------------------------------
