@@ -333,13 +333,13 @@ export class SoloScene extends Scene {
         if (brick.kind === 'gift') {
             const type = POWERUP_POOL[Math.floor(Math.random() * POWERUP_POOL.length)];
             this.spawnPowerUp(brick.x, brick.y, type);
-            sfx.applause(0.5);
+            sfx.gift();
             this.flashPickupBanner('🎁  GIFT');
             this.bgfx.pulse(0xffd166, 0.22);
         } else if (brick.kind === 'diamond') {
             this.score += 50;
             this.hudScore.setText(`${this.score}`);
-            sfx.applause(0.45);
+            sfx.diamond();
             this.flashPickupBanner('💎  +50');
             this.bgfx.pulse(0x9d8df1, 0.20);
             for (let i = 0; i < 12; i++) {
@@ -358,7 +358,7 @@ export class SoloScene extends Scene {
                 });
             }
         } else if (brick.kind === 'bomb') {
-            sfx.fail(0.5);
+            sfx.bomb();
             this.flashPickupBanner('💣  BOOM');
             this.cameras.main.shake(180, 0.012);
             this.bgfx.pulse(0xff6b6b, 0.32);
@@ -394,7 +394,8 @@ export class SoloScene extends Scene {
             this.freezeUntil = this.time.now + 50;
             const tierColor = result.tier >= 6 ? COLORS.p2 : result.tier >= 5 ? 0xffd166 : 0x7ce38b;
             this.bgfx.pulse(tierColor, 0.16);
-            if (result.tier >= 5) sfx.applause(0.35);
+            if (result.tier >= 6) sfx.tier7Fanfare(0.5);
+            else if (result.tier >= 5) sfx.applause(0.35);
         }
 
         // Apply special-brick effect AFTER core kill
@@ -509,15 +510,17 @@ export class SoloScene extends Scene {
     }
 
     private applyPowerUp(type: PowerUpType) {
-        sfx.playSample('combo', { volume: 0.5 });
         this.flashPickupBanner(POWERUP_VISUAL[type].emoji + '  ' + POWERUP_VISUAL[type].label);
         this.bgfx.pulse(POWERUP_VISUAL[type].color, 0.22);
         if (type === 'multi-ball') {
+            sfx.multiBall();
             this.spawnExtraBalls();
         } else if (type === 'long-paddle') {
+            sfx.longPaddle();
             this.refreshEffect('long-paddle', LONG_PADDLE_DURATION_MS);
             this.applyLongPaddle();
         } else if (type === 'slow-mo') {
+            sfx.slowMo();
             this.refreshEffect('slow-mo', SLOW_MO_DURATION_MS);
             this.applySlowMo();
         }

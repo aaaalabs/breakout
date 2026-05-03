@@ -69,9 +69,12 @@ export class LobbyScene extends Scene {
             this.time.delayedCall(180, () => this.handleJoinById(data.autoJoinRoomId!));
         }
 
+        // Lobby ambient loop — starts on first user gesture (sfx.unlock unlocks it)
+        this.input.once('pointerdown', () => sfx.startLobbyAmbient());
+
         // Cleanup on shutdown
-        this.events.once('shutdown', () => this.cleanup());
-        this.events.once('destroy', () => this.cleanup());
+        this.events.once('shutdown', () => { this.cleanup(); sfx.stopLobbyAmbient(); });
+        this.events.once('destroy', () => { this.cleanup(); sfx.stopLobbyAmbient(); });
     }
 
     update(time: number, deltaMs: number) {

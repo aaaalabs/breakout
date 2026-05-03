@@ -151,10 +151,11 @@ export class GameScene extends Scene {
             // Tiny pulse on wall hit — leave subtle for now
         });
 
-        // Garbage incoming — drumroll cue + screen-pulse on impact
+        // Garbage incoming — different cue based on whether you're being hit or hitting them
         room.onMessage<{ slot: PlayerSlot; count: number }>('garbage', (ev) => {
-            sfx.drumroll(0.4);
             const isMe = ev.slot === this.mySlot;
+            if (isMe) sfx.garbageIn();
+            else sfx.garbageOut();
             this.bgfx.pulse(isMe ? 0xff6b6b : 0x7ce38b, 0.22);
             this.flashGarbageBanner(isMe ? '🗑️  GARBAGE +' + ev.count : '⚔️  YOU GARBAGED THEM');
         });
@@ -626,12 +627,25 @@ export class GameScene extends Scene {
         sfx.brickBreak();
         sfx.maybeCombo();
         this.squashBall('y', 0.5);
+
+        // Special-brick sound cues (read from current schema state by position match)
+        const stateArr = ev.slot === 'p1' ? net.room?.state.bricksP1 : net.room?.state.bricksP2;
+        if (stateArr) {
+            const hit = stateArr.find((b) => b.alive === 0 && Math.abs(b.x - ev.x) < 1 && Math.abs(b.y - ev.y) < 1);
+            if (hit) {
+                if (hit.kind === 'bomb') sfx.bomb();
+                else if (hit.kind === 'diamond') sfx.diamond();
+                else if (hit.kind === 'gift') sfx.gift();
+            }
+        }
+
         if (ev.slot === this.mySlot) {
             const result = this.combo.register(this.time.now);
             if (result.tier >= 4) {
                 this.freezeRender(50);
                 const tierColor = result.tier >= 6 ? COLORS.p2 : result.tier >= 5 ? 0xffd166 : 0x7ce38b;
                 this.bgfx.pulse(tierColor, 0.14);
+                if (result.tier >= 6) sfx.tier7Fanfare(0.45);
             }
         }
     }
@@ -710,15 +724,15 @@ export class GameScene extends Scene {
             if (display !== this.lastCountdownNumber) {
                 this.lastCountdownNumber = display;
                 this.popCountdown(`${display}`);
-                sfx.countdownPip();
+                sfx.tick();
             }
         } else if (phase === 'playing') {
             this.hudCenter.setText('');
             if (this.lastCountdownNumber !== -1) {
                 this.lastCountdownNumber = -1;
                 this.popCountdown('GO', true);
-                sfx.countdownGo();
-                sfx.matchStart();
+                sfx.go();
+                sfx.matchFanfare();
             }
         } else if (phase === 'waiting') {
             this.hudCenter.setText('STANDBY');

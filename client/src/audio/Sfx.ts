@@ -17,6 +17,21 @@ const SAMPLE_URLS = {
     'buzzer': '/audio/buzzer.mp3',
     'fail': '/audio/fail.mp3',
     'drumroll': '/audio/drumroll.mp3',
+    // Suno-generated cues (custom-tailored to game moments)
+    'match-fanfare':     '/audio/match-start-fanfare.mp3',
+    'garbage-in':        '/audio/garbage-incoming.mp3',
+    'garbage-out':       '/audio/garbage-delivered.mp3',
+    'bomb':              '/audio/bomb-explosion.mp3',
+    'diamond':           '/audio/diamond-chime.mp3',
+    'gift':              '/audio/gift-pickup.mp3',
+    'multi-ball':        '/audio/multi-ball-spawn.mp3',
+    'long-paddle':       '/audio/long-paddle.mp3',
+    'slow-mo':           '/audio/slow-mo-activate.mp3',
+    'tier7-fanfare':     '/audio/combo-tier7-fanfare.mp3',
+    'tick':              '/audio/countdown-tick.mp3',
+    'go':                '/audio/countdown-go.mp3',
+    'suspense':          '/audio/draw-suspense.mp3',
+    'lobby-ambient':     '/audio/lobby-ambient-loop.mp3',
 } as const;
 export type SampleKey = keyof typeof SAMPLE_URLS;
 
@@ -202,6 +217,33 @@ class SfxEngine {
 
     /** Drumroll — tension build (countdown, garbage incoming, big serve). */
     drumroll(volume = 0.45) { this.playSample('drumroll', { volume }); }
+
+    // ---- Suno-generated SFX shorthands -----------------------------------
+
+    matchFanfare(v = 0.55)  { this.playSample('match-fanfare', { volume: v }); }
+    garbageIn(v = 0.55)     { this.playSample('garbage-in', { volume: v }); }
+    garbageOut(v = 0.55)    { this.playSample('garbage-out', { volume: v }); }
+    bomb(v = 0.6)           { this.playSample('bomb', { volume: v }); }
+    diamond(v = 0.5)        { this.playSample('diamond', { volume: v }); }
+    gift(v = 0.5)           { this.playSample('gift', { volume: v }); }
+    multiBall(v = 0.55)     { this.playSample('multi-ball', { volume: v }); }
+    longPaddle(v = 0.5)     { this.playSample('long-paddle', { volume: v }); }
+    slowMo(v = 0.5)         { this.playSample('slow-mo', { volume: v }); }
+    tier7Fanfare(v = 0.55)  { this.playSample('tier7-fanfare', { volume: v }); }
+    tick(v = 0.5)           { this.playSample('tick', { volume: v }); }
+    go(v = 0.6)             { this.playSample('go', { volume: v }); }
+    suspense(v = 0.5)       { this.playSample('suspense', { volume: v }); }
+
+    /** Lobby ambient loop — call startLobbyAmbient() and stopLobbyAmbient() to manage. */
+    private lobbySource: AudioBufferSourceNode | null = null;
+    startLobbyAmbient() {
+        if (this.lobbySource) return;
+        this.lobbySource = this.playSample('lobby-ambient', { volume: 0.18, loop: true });
+    }
+    stopLobbyAmbient() {
+        try { this.lobbySource?.stop(); } catch { /* ignore */ }
+        this.lobbySource = null;
+    }
 
     /** Defeat sting — short descending. */
     lose() {
